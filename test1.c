@@ -16,19 +16,15 @@ int main()
 {
 	//srand(time(NULL));
 	int small = 0, big = 0;
-	for (int i = 0; i < 1000000; i++)
 	{
 		double j = get_rand();
-		if (j < 0.5)
 		{
 			small ++;
-		}
 		else if (j > 0.5)
 		{
 			big ++;
 		}
 	}
-	
 	printf("small= %d, big = %d\n", small, big);
 	
 	return 0;
