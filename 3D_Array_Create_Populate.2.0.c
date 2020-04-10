@@ -2,7 +2,7 @@
 // --------------------------------
 // Useful link: https://www.techiedelight.com/dynamically-allocate-memory-for-3d-array/
 // ---------------------------------------------------------------------------------------
-// Compile with gcc Test.c -lm -o Tout.out -mcmodel=large
+// Compile with gcc 3D_Array_Create_Populate.2.0.c -lm -o 3D_Array_Create_Populate.2.0.out -mcmodel=large
 // ------------------------------------------------------------
 
 
