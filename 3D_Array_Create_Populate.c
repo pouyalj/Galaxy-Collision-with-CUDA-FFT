@@ -38,4 +38,7 @@ int main() {
             }
         }
     }
+
+    // dealocate memory
+    free(threedArray);
 }
