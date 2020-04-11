@@ -22,12 +22,13 @@
 
 // Dynamically Allocate Memory for 3D Array
 int main() {
+	int i, j, k;
     // dynamically allocate memory of size M*N*O
     float **particleArray = (float **)malloc(M * sizeof(float *));
     
 
     // assign values to allocated memory
-	for (int i = 0; i < M; i++) {
+	for (i = 0; i < M; i++) {
 		particleArray[i] = (float *)malloc(N * sizeof(float*));
 
 		if (particleArray[i] == NULL) {
@@ -37,17 +38,17 @@ int main() {
 	}
 
     // assign values to allocated memory
-	for (int i = 0; i < M; i++) {
-		for (int j = 0; j < N; j++) {
+	for (i = 0; i < M; i++) {
+		for (j = 0; j < N; j++) {
 			particleArray[i][j] = rand() % 100;
         }
     }
 
 
     // print the 2D array
-	for (int i = 0; i < M; i++)
+	for (i = 0; i < M; i++)
 	{
-		for (int j = 0; j < N; j++) {
+		for (j = 0; j < N; j++) {
             printf("%f\n", particleArray[i][j]);
 
 	   	}
@@ -55,7 +56,7 @@ int main() {
 	}
 
 	// deallocate memory
-	for (int i = 0; i < M; i++) {
+	for (i = 0; i < M; i++) {
         free(particleArray[i]);
 	}
     free(particleArray);

@@ -21,23 +21,24 @@
 
 // Dynamically Allocate Memory for 3D Array
 int main() {
+	int i, j, k;
     // dynamically allocate memory of size M*N*O
     float threedArray[M][N][O];
 
     // assign values to allocated memory
-	for (int i = 0; i < M; i++) {
-		for (int j = 0; j < N; j++) {
-			for (int k = 0; k < O; k++) {
+	for (i = 0; i < M; i++) {
+		for (j = 0; j < N; j++) {
+			for (k = 0; k < O; k++) {
 				threedArray[i][j][k] = rand() % 100;
             }
 		}
 	}
     // print the 3D array
-	for (int i = 0; i < M; i++)
+	for (i = 0; i < M; i++)
 	{
-		for (int j = 0; j < N; j++)
+		for (j = 0; j < N; j++)
 		{
-			for (int k = 0; k < O; k++)
+			for (k = 0; k < O; k++)
 				printf("%f\n", threedArray[i][j][k]);
 	   	}
 	}

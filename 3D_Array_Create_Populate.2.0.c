@@ -19,11 +19,12 @@
 
 // Dynamically Allocate Memory for 3D Array
 int main() {
+	int i, j, k;
     // dynamically allocate memory of size M*N*O
     float*** threedArray = (float***)malloc(M * sizeof(float**));
 
     // assign values to allocated memory
-	for (int i = 0; i < M; i++) {
+	for (i = 0; i < M; i++) {
 		threedArray[i] = (float**)malloc(N * sizeof(float*));
 
 		if (threedArray[i] == NULL) {
@@ -31,7 +32,7 @@ int main() {
 			exit(0);
 		}
 
-		for (int j = 0; j < N; j++)
+		for (j = 0; j < N; j++)
 		{
 			threedArray[i][j] = (float*)malloc(O * sizeof(float));
 
@@ -42,11 +43,11 @@ int main() {
 		}
 	}
     // print the 3D array
-	for (int i = 0; i < M; i++)
+	for (i = 0; i < M; i++)
 	{
-		for (int j = 0; j < N; j++)
+		for (j = 0; j < N; j++)
 		{
-			for (int k = 0; k < O; k++)
+			for (k = 0; k < O; k++)
 				printf("%f\n", threedArray[i][j][k]);
 
 			printf("\n");
@@ -55,9 +56,9 @@ int main() {
 	}
 
 	// deallocate memory
-	for (int i = 0; i < M; i++)
+	for (i = 0; i < M; i++)
 	{
-		for (int j = 0; j < N; j++)
+		for (j = 0; j < N; j++)
 			free(threedArray[i][j]);
 
 		free(threedArray[i]);
