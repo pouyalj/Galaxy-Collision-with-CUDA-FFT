@@ -13,6 +13,12 @@
 #include <assert.h>
 
 
+#define M 100000000
+#define N 8
+
+#define I 64
+#define J 64
+#define K 8
 
 
 // updater takes the initial values and moves everything one step forward in time.
@@ -25,8 +31,8 @@ void updater(float v0, float x0, float a){
     v0 = v;
 }
 
-void center_diff(int xN, int yN, int zN, float grav_po[xN][yN][zN],
- float den_array[xN][yN][zN], float particle_array[xN][8]) {
+void center_diff(int xN, int yN, int zN, float grav_po[I][J][K],
+ float den_array[I][J][K], float particle_array[M][N]) {
     int i, j, k, l;
     float gx[64][64][8], gy[64][64][8], gz[64][64][8];
     float (*g)[64][64][8];
