@@ -1,5 +1,4 @@
-//Compile with: nvcc CUDAfft2.0.cu -I/home/phyd57/N_Body1/9.2/include -L/home/phyd57/N_Body1/9.2/lib64 -lcufft -o CUDAfftcu2.out
-
+//Compile with: nvcc CUDAfft2.0.cu -I/home/phyd57/N_Body1/9.2/include -L/home/phyd57/N_Body1/9.2/lib64 -lcufft -o CUDAfftcu2.out -I/usr/local/dislin -ldislin
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <cufft.h>
@@ -8,7 +7,7 @@
 #include<stdio.h>
 #include <iostream>
 
-//#include "dislin.h"
+#include "dislin.h"
 
 #define N 256 // N is the sidelength of the image -> N^3 pixels in entire image
 #define block_size_x 2 
@@ -17,32 +16,26 @@
 
 float den_array[N][N][N];
 float grav_po[N][N][N];
-float image[N][N];
+float image[N/2][N/2];
 
 __global__ void real2complex(cufftComplex *c, float *a, int n);
 __global__ void complex2real_scaled(float *a, cufftComplex *c, float scale, int n);
-__global__ void solve_poisson(cufftComplex *c, float *kx, float *ky, float *kz, int n);
+__global__ void solve_poisson(cufftComplex *c, float *k_xyz, int n);
 
 
-void FFT_poisson(float den_array[N][N][N], float grav_po[N][N][N], float L)
+void FFT_poisson(float den_array[N][N][N], float grav_po[N][N][N])
 {
 	int x, y, z, i;
 
-	float *kx, *ky, *kz, *den;
-	kx = (float *)malloc(sizeof(float)*N);
-	ky = (float *)malloc(sizeof(float)*N);
-	kz = (float *)malloc(sizeof(float)*N);
+	float *k_xyz, *den;
+	k_xyz = (float *)malloc(sizeof(float)*N);
 	den = (float *)malloc(sizeof(float)*N*N*N);
 
-	float *kx_d, *ky_d, *kz_d, *den_d;
+	float *k_xyz_d, *den_d;
 	cufftComplex *den_complex_d;
-	cudaMalloc((void **)&kx_d, sizeof(float) * N);
-	cudaMalloc((void **)&ky_d, sizeof(float) * N);
-	cudaMalloc((void **)&kz_d, sizeof(float) * N);
+	cudaMalloc((void **)&k_xyz_d, sizeof(float) * N);
 	cudaMalloc((void **)&den_d, sizeof(float) * N * N * N);
 	cudaMalloc((void **)&den_complex_d, sizeof(cufftComplex) * N * N * N);
-
-	printf("A bunch of Mallocs\n");
 
 	#pragma omp for
 	for (x = 0; x < N; x++)
@@ -50,30 +43,27 @@ void FFT_poisson(float den_array[N][N][N], float grav_po[N][N][N], float L)
 			for (z = 0; z < N; z++)
 				den[x + y*N + z*N*N] = den_array[x][y][z];
 
-	printf("Den transfer\n");
-
 	float* den_inital = (float *)malloc(sizeof(float) * N * N * N);
 	for (i = 0; i < N * N; i++)
 		den_inital[i] = den[i];
 
 	for (i = 0; i < N; i++)
 	{
-		kx[i] = (i / N)* L * 2.0f * 3.14159f;
-		ky[i] = (i / N)* L * 2.0f * 3.14159f;
-		kz[i] = (i / N)* L * 2.0f * 3.14159f;
+		if (i < N/2)
+		{
+			k_xyz[i] = i;
+		}
+		else
+		{
+			k_xyz[i] = i-N;
+		}
 	}
 
-	printf("ks made, Memcpy next\n");
-
-	cudaMemcpy(kx_d, kx, sizeof(float)*N, cudaMemcpyHostToDevice);
-	cudaMemcpy(ky_d, ky, sizeof(float)*N, cudaMemcpyHostToDevice);
-	cudaMemcpy(kz_d, kz, sizeof(float)*N, cudaMemcpyHostToDevice);
+	cudaMemcpy(k_xyz_d, k_xyz, sizeof(float)*N, cudaMemcpyHostToDevice);
 	cudaMemcpy(den_d, den, sizeof(float)*N*N*N, cudaMemcpyHostToDevice);
-	printf("Memcpy completed\n");
 
 	cufftHandle plan;
 	cufftPlan3d(&plan,N,N,N,CUFFT_C2C);
-	printf("Plan created\n");
 
 	/* Compute the execution configuration, block_size_x*block_size_y*block_size_z = number of threads */
 	dim3 dimBlock(block_size_x, block_size_y, block_size_z);
@@ -87,7 +77,7 @@ void FFT_poisson(float den_array[N][N][N], float grav_po[N][N][N], float L)
 
 	cufftExecC2C(plan, den_complex_d, den_complex_d, CUFFT_FORWARD);
 
-	solve_poisson<<<dimGrid, dimBlock>>>(den_complex_d, kx_d, ky_d, kz_d, N);
+	solve_poisson<<<dimGrid, dimBlock>>>(den_complex_d, k_xyz_d, N);
 
 	cufftExecC2C(plan, den_complex_d, den_complex_d, CUFFT_INVERSE);
 
@@ -103,48 +93,52 @@ void FFT_poisson(float den_array[N][N][N], float grav_po[N][N][N], float L)
 			for (z = 0; z < N; z++)
 				grav_po[x][y][z] = den[x + y*N + z*N*N];
 
-	printf("Transfered back, next dystroy\n");
-
 	/* Destroy plan and clean up memory on device*/
-	cudaFree(kx);
-	cudaFree(ky);
-	cudaFree(kz);
+	cudaFree(k_xyz);
 	cudaFree(den);
 	cudaFree(den_inital);
 	cufftDestroy(plan);
 	cudaFree(den_complex_d);
 	cudaFree(den);
-	cudaFree(kx_d);
-	cudaFree(ky_d);
-	cudaFree(kz_d);
-
-	printf("Destruction complete\n");
+	cudaFree(k_xyz_d);
 }
 
-/*
-void make_image(float array[N][N][N])
+
+void make_image(float array[N][N][N], const char *output_name)
 {
 	int x, y, z;
-	float Max = -500.0, Min = 500.0
+	float Max = -500.0, Min = 500.0;
 	
 	#pragma omp for
-	for (x = 0; x < N; x++)
-		for (y = 0; y < N; y++)
+	for (x = 0; x < N/2; x++)
+		for (y = 0; y < N/2; y++)
 			image[x][y] = 0.0;
 
 	#pragma omp for
-	for (x = 0; x < N; x++)
-		for (y = 0; y < N; y++)
-			for (z = 0; z < N; z++)
-				image[x][y] += den_array[x][y][z];
+	for (x = 0; x < N/2; x++)
+		for (y = 0; y < N/2; y++)
+			for (z = 0; z < N/2; z++)
+				image[x][y] += array[x+N/4][y+N/4][z+N/4];
 
 	#pragma omp for
-	for (x = 0; x < N; x++)
-		for (y = 0; y < N; y++)
-			if (image[x][y] > Max) Max = image[x][y];
-			if (image[x][y] < Min) Min = image[x][y]
+	for (x = 0; x < N/2; x++)
+	{
+		for (y = 0; y < N/2; y++)
+		{
+			if (image[x][y] > Max)
+			{
+				Max = image[x][y];
+			}
+			if (image[x][y] < Min)
+			{
+				Min = image[x][y];
+			}
+		}
+	}
 
-	metafl("cons");
+	metafl("PNG");
+	setfil(output_name);
+	//metafl("CONS");
 	disini();
 	pagera();
 	hwfont();
@@ -157,20 +151,18 @@ void make_image(float array[N][N][N])
 	name("Potential in Z", "z");
 
 	intax()	;
-	autres(800,800);
+	autres(N/2,N/2);
 	axspos(300,1850);
-	ax3len(1400,1400,1400);
+	ax3len(1600,1600,1600);
 	
-	call labdig(4, "YZ")
-	call labdig(1, "x")
-	graf3(-N/2, N/2, -N/2, N/10, -N/2, N/2, -N/2, N/10, Min, Max, Min, (Max - Min)/10.0);
-	crvmat((float *)XY, 800, 800, 1, 1);
+	labdig(6, "Z");
+	graf3(-N/4, N/4, -N/4, N/40, -N/4, N/4, -N/4, N/40, Min, Max, Min, (Max-Min)/10);
+	crvmat((float *)image, N/2, N/2 , 1, 1);
 
 	height(50);
 	title();
 	disfin();
 }
-*/
 
 int main()
 {
@@ -190,26 +182,30 @@ int main()
 	}
 
 	den_array[128][128][128] = 500.0;
+	den_array[128][158][128] = 250.0;
+	den_array[128][98][128] = 250.0;
+	den_array[158][128][128] = 250.0;
+	den_array[98][128][128] = 250.0;
 
 	#pragma omp parallel for
 	for (i = 143; i > 113; i --)
 	{
 		for (j = 113; j < 143; j++)
 		{
-			printf("%f,", den_array[j][i][128]);
+			printf("%.1f,", den_array[j][i][128]);
 		}
 		
 		printf("\n");
 
 	}
 
-	FFT_poisson(den_array, grav_po, 128);
+	FFT_poisson(den_array, grav_po);
 
 	printf("z = 127:\n");
 	#pragma omp parallel for
-	for (i = 143; i > 113; i --)
+	for (i = 132; i > 124; i --)
 	{
-		for (j = 113; j < 143; j++)
+		for (j = 123; j < 133; j++)
 		{
 			printf("%f,", grav_po[j][i][127]);
 		}
@@ -221,9 +217,9 @@ int main()
 	printf("\n\n");
 	printf("z = 128:\n");
 	#pragma omp parallel for
-	for (i = 143; i > 113; i --)
+	for (i = 132; i > 124; i --)
 	{
-		for (j = 113; j < 143; j++)
+		for (j = 123; j < 133; j++)
 		{
 			printf("%f,", grav_po[j][i][128]);
 		}
@@ -235,11 +231,11 @@ int main()
 	printf("\n\n");
 	printf("z = 129:\n");
 	#pragma omp parallel for
-	for (j = 143; j > 113; j --)
+	for (j = 132; j > 124; j --)
 	{
-		for (i = 113; i < 143; i++)
+		for (i = 123; i < 133; i++)
 		{
-			printf("%.1f,", grav_po[i][j][129]);
+			printf("%f,", grav_po[i][j][129]);
 		}
 		
 		printf("\n");
@@ -250,9 +246,20 @@ int main()
 	printf("%f\n", grav_po[255][128][128]);
 	printf("%f\n", grav_po[128][0][128]);
 	printf("%f\n", grav_po[128][255][128]);
+	
+	//print the 8 corners.
+	printf("\n%f\n", grav_po[0][0][0]);
+	printf("%f\n", grav_po[0][0][255]);
+	printf("%f\n", grav_po[0][255][255]);
+	printf("%f\n", grav_po[0][255][0]);
+	printf("\n%f\n", grav_po[255][0][255]);
+	printf("%f\n", grav_po[255][0][0]);
+	printf("%f\n", grav_po[255][255][0]);
+	printf("%f\n", grav_po[255][255][255]);
 
-	//make_image(grav_po);
+	make_image(grav_po, "final_test.png");
 }
+
 
 __global__ void real2complex(cufftComplex *c, float *a, int n)
 {
@@ -282,7 +289,7 @@ __global__ void complex2real_scaled(float *a, cufftComplex *c, float scale, int 
 }
 
 
-__global__ void solve_poisson(cufftComplex *c, float *kx, float *ky, float *kz, int n)
+__global__ void solve_poisson(cufftComplex *c, float *k_xyz, int n)
 {
 	/* compute idx and idy, the location of the element in the original NxN array */
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -291,7 +298,7 @@ __global__ void solve_poisson(cufftComplex *c, float *kx, float *ky, float *kz, 
 	if (idx < n && idy < n && idz < n)
 	{
 		int index = idx + idy*n + idz*n*n;
-		float scale = -(kx[idx]*kx[idx] + ky[idy]*ky[idy] + kz[idz]*kz[idz]) + 0.00001f;
+		float scale = -(k_xyz[idx]*k_xyz[idx] + k_xyz[idy]*k_xyz[idy] + k_xyz[idz]*k_xyz[idz]) + 0.00001f;
 		if (idx == 0 && idy == 0 && idz == 0) scale = 1.0f;
 		scale = 1.0f / scale;
 		c[index].x *= scale;
