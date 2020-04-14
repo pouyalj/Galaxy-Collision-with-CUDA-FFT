@@ -106,7 +106,7 @@ void FFT_poisson(float den_array[N][N][N], float grav_po[N][N][N])
 }
 
 
-void make_image(float array[N][N][N], const char *output_name)
+void make_image(float array[N][N][N], const char *output_name, const char *title)
 {
 	int x, y, z;
 	float Max = -500.0, Min = 500.0;
@@ -145,7 +145,7 @@ void make_image(float array[N][N][N], const char *output_name)
 	pagera();
 	hwfont();
 
-	titlin("Potential map", 4);
+	titlin(title, 4);
 	//titlin("anthing below", 2)
 
 	name("X [kP]", "x");
