@@ -69,7 +69,8 @@ void densArray(float **particleArray, float*** threedArray) {
 
 // Dynamically Allocate Memory for 3D Array
 void create_particle_Array(float **particleArray) {
-	int i, j, k, index, max_number, min_number, counter;
+	int i, j, k, index;
+    float X, Y, R, V;
     // dynamically allocate memory of size M*N*O
     
 
@@ -91,13 +92,25 @@ void create_particle_Array(float **particleArray) {
         particleArray[i][0] = 2*1.41*cos((float)(rand()%629)/100) + 96.0;
         particleArray[i][1] = 2*1.41*sin((float)(rand()%629)/100) + 96.0;
         particleArray[i][2] = (float)(rand()%(50+1))/1000 + 128.0; // rand() % (max_number + 1 - minimum_number) + minimum_number
-
+        X = particleArray[i][0] - 96;
+        Y = particleArray[i][1] - 96;
+        R = sqrt(pow(X,2) + pow(Y,2));
+        V = sqrt(1190*R);
+        particleArray[i][3] = Y/R*V;
+        particleArray[i][4] = X/R*V;
+        particleArray[i][5] = 0;
     }
     for (index=1; index<11; index++){
         for (i = (int)(M*0.05/2+((index-1)*0.095*M/2)); i < (int)(M*0.05/2+((index)*0.095*M/2)); i++) {
             particleArray[i][0] = (2+index)*1.41*cos((float)(rand()%629)/100) + 96.0;
             particleArray[i][1] = (2+index)*1.41*sin((float)(rand()%629)/100) + 96.0;
             particleArray[i][2] = (float)(rand()%(50+1))/1000 + 128.0;
+            X = particleArray[i][0] - 96;
+            Y = particleArray[i][1] - 96;
+            R = sqrt(pow(X,2) + pow(Y,2));
+            V = sqrt(1190*R);
+            particleArray[i][3] = Y/R*V;
+            particleArray[i][4] = X/R*V;
         }
     }
 	for (i = 0; i < (int)(M/2); i++) {
@@ -111,6 +124,13 @@ void create_particle_Array(float **particleArray) {
         particleArray[i][0] = 2*1.41*cos((float)(rand()%629)/100)  + 160.0;
         particleArray[i][1] = 2*1.41*sin((float)(rand()%629)/100)  + 160.0;
         particleArray[i][2] = (float)(rand()%(50+1))/1000 + 128.0;
+        X = particleArray[i][0] - 96;
+        Y = particleArray[i][1] - 96;
+        R = sqrt(pow(X,2) + pow(Y,2));
+        V = sqrt(1190*R);
+        particleArray[i][3] = Y/R*V;
+        particleArray[i][4] = X/R*V;
+        particleArray[i][5] = 0;
     }
 
 	for (index=11; index<21; index++){
@@ -118,6 +138,13 @@ void create_particle_Array(float **particleArray) {
             particleArray[i][0] = (2+index-10)*1.41*cos((float)(rand()%629)/100)  + 160.0;
             particleArray[i][1] = (2+index-10)*1.41*sin((float)(rand()%629)/100)  + 160.0;
             particleArray[i][2] = (float)(rand()%(150+1))/1000 + 128.0;
+            X = particleArray[i][0] - 96;
+            Y = particleArray[i][1] - 96;
+            R = sqrt(pow(X,2) + pow(Y,2));
+            V = sqrt(1190*R);
+            particleArray[i][3] = Y/R*V;
+            particleArray[i][4] = X/R*V;
+            particleArray[i][5] = 0;
         }
     }
 
@@ -184,31 +211,31 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
     printf("updater function initiated\n");
     for(i=0; i<M; i++){
         for(l=0; l<1; l++){
-            v_half = particleArray[i][l+3] + 
+            v_half = particleArray[i][l+3] + 595 +
             (grav_po[(int)round(particleArray[i][0])+1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]
                 - grav_po[(int)round(particleArray[i][0])-1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])])/(2);
             x = particleArray[i][l] + v_half;
-            v = v_half + 
+            v = v_half + 595 +
             (grav_po[(int)round(particleArray[i][0])+1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]
                 - grav_po[(int)round(particleArray[i][0])-1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])])/(2);
             particleArray[i][l+3] = v;
         }
         for(l=1; l<2; l++){
-            v_half = particleArray[i][l+3] + 
+            v_half = particleArray[i][l+3] + 595 +
             (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])+1][(int)round(particleArray[i][2])] 
             - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])-1][(int)round(particleArray[i][2])])/(2);
             x = particleArray[i][l] + v_half;
-            v = v_half + 
+            v = v_half + 595 +
             (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])+1][(int)round(particleArray[i][2])] 
             - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])-1][(int)round(particleArray[i][2])])/(2);
             particleArray[i][l+3] = v;
         }
         for(l=2; l<3; l++){
-            v_half = particleArray[i][l+3] + 
+            v_half = particleArray[i][l+3] + 595 +
             (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])+1] 
             - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])-1])/(2);
             x = particleArray[i][l] + v_half;
-            v = v_half + 
+            v = v_half + 595 +
             (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])+1] 
             - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])-1])/(2);
             particleArray[i][l+3] = v;
