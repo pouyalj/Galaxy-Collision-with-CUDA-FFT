@@ -2,7 +2,7 @@
 // --------------------------------
 // Useful link: https://www.techiedelight.com/dynamically-allocate-memory-for-3d-array/
 // ---------------------------------------------------------------------------------------
-// Compile with gcc densA_particleA.3.0.c -lm -o densA_particleA.3.0.out -mcmodel=large
+// Compile with gcc densA_particleA.4.0.c -lm -o densA_particleA.4.0.out -mcmodel=large
 // --------------------------------------------------------------------------------------------------------
 // Can be used given a design decision to be made by the group
 // --------------------------------------------------------------
@@ -48,6 +48,9 @@ void densArray(float **particleArray, float*** threedArray) {
 
     // assign values to allocated memory
 	for (i=0; i < M; i++) {
+        // printf("%d\n", i);
+        // printf("%d\n", (int)floorf(particleArray[i][0]));
+        // printf("%d %d %d \n", (int)floorf(particleArray[i][0]), (int)floorf(particleArray[i][1]), (int)floorf(particleArray[i][2]));
         threedArray[(int)floorf(particleArray[i][0])][(int)floorf(particleArray[i][1])][(int)floorf(particleArray[i][2])] =
         threedArray[(int)floorf(particleArray[i][0])][(int)floorf(particleArray[i][1])][(int)floorf(particleArray[i][2])] + 1;
 	}
@@ -66,7 +69,7 @@ void densArray(float **particleArray, float*** threedArray) {
 
 // Dynamically Allocate Memory for 3D Array
 void create_particle_Array(float **particleArray) {
-	int i, j, k, index, max_number, min_number;
+	int i, j, k, index, max_number, min_number, counter;
     // dynamically allocate memory of size M*N*O
     
 
@@ -85,23 +88,16 @@ void create_particle_Array(float **particleArray) {
 
 	// first galaxy population
     for (i = 0; i < (int)(M*0.05/2); i++) {
-        for (j = 0; j < 2; j++) {
-            particleArray[i][j] = (float)(rand()%1001)/1000 + 96.0; // rand() % (max_number + 1 - minimum_number) + minimum_number
-        }
-		for (j=2;j<3;j++){
-			particleArray[i][j] = (float)(rand()%(50+1))/1000 + 96.0;
-		}
+        particleArray[i][0] = 2*1.41*cos((float)(rand()%629)/100) + 96.0;
+        particleArray[i][1] = 2*1.41*sin((float)(rand()%629)/100) + 96.0;
+        particleArray[i][2] = (float)(rand()%(50+1))/1000 + 128.0; // rand() % (max_number + 1 - minimum_number) + minimum_number
+
     }
     for (index=1; index<11; index++){
         for (i = (int)(M*0.05/2+((index-1)*0.095*M/2)); i < (int)(M*0.05/2+((index)*0.095*M/2)); i++) {
-            max_number = 1000*(index+1);
-            min_number = 1000*index;
-            for (j = 0; j < 2; j++) {
-                particleArray[i][j] = ((float)(rand()%(max_number+1-min_number))+(float)min_number)/1000 + 96.0;
-            }
-			for (j=2;j<3;j++){
-				particleArray[i][j] = (float)(rand()%(150+1))/1000 + 96.0;
-			}
+            particleArray[i][0] = (2+index)*1.41*cos((float)(rand()%629)/100) + 96.0;
+            particleArray[i][1] = (2+index)*1.41*sin((float)(rand()%629)/100) + 96.0;
+            particleArray[i][2] = (float)(rand()%(50+1))/1000 + 128.0;
         }
     }
 	for (i = 0; i < (int)(M/2); i++) {
@@ -112,28 +108,16 @@ void create_particle_Array(float **particleArray) {
 
 	// second galaxy population
 	for (i = (int)(M*0.05/2+((10)*0.095*M/2)); i < (int)(M*0.05/2+((10)*0.095*M/2))+(int)(M*0.05/2); i++) {
-        for (j = 0; j < 2; j++) {
-            particleArray[i][j] = (float)(rand()%1001)/1000 + 160; // rand() % (max_number + 1 - minimum_number) + minimum_number
-        }
-		for (j=2;j<3;j++){
-			particleArray[i][j] = (float)(rand()%(50+1))/1000 + 160;
-		}
-
-		for (j=3;j<5;j++){
-
-		}
+        particleArray[i][0] = 2*1.41*cos((float)(rand()%629)/100)  + 160.0;
+        particleArray[i][1] = 2*1.41*sin((float)(rand()%629)/100)  + 160.0;
+        particleArray[i][2] = (float)(rand()%(50+1))/1000 + 128.0;
     }
 
 	for (index=11; index<21; index++){
         for (i = (int)(M*0.05+((index-1)*0.095*M/2)); i < (int)(M*0.05+((index)*0.095*M/2)); i++) {
-            max_number = 1000*(index+1);
-            min_number = 1000*index;
-            for (j = 0; j < 2; j++) {
-                particleArray[i][j] = ((float)(rand()%(max_number+1-min_number))+(float)min_number)/1000 + 160;
-            }
-			for (j=2;j<3;j++){
-				particleArray[i][j] = (float)(rand()%(150+1))/1000 + 160;
-			}
+            particleArray[i][0] = (2+index-10)*1.41*cos((float)(rand()%629)/100)  + 160.0;
+            particleArray[i][1] = (2+index-10)*1.41*sin((float)(rand()%629)/100)  + 160.0;
+            particleArray[i][2] = (float)(rand()%(150+1))/1000 + 128.0;
         }
     }
 
@@ -142,10 +126,9 @@ void create_particle_Array(float **particleArray) {
 			particleArray[i][j] = 1.0; // 1.0 is indicator for Andromeda
 		}
 	}
-
-
-    // // print the 2D array
-	// for (i = 0; i < 10; i++)
+    // printf("%f\n", particleArray[M-1][0]);
+    // print the 2D array
+	// for (i = 0; i < M; i+=100000)
 	// {
 	// 	for (j = 0; j < 3; j++) {
     //         printf("%f\n", particleArray[i][j]);
@@ -159,6 +142,21 @@ void create_particle_Array(float **particleArray) {
     //     free(particleArray[i]);
 	// }
     // free(particleArray);
+}
+
+
+
+void cm(float **particleArray){
+    float cm[3];
+    int i;
+    for(i=0;i<M;i++){
+        cm[0] = particleArray[i][0];
+        cm[1] = particleArray[i][1];
+        cm[2] = particleArray[i][2];
+    }
+    cm[0] = cm[0]/M;
+    cm[1] = cm[1]/M;
+    cm[2] = cm[2]/M;
 }
 
 
@@ -291,7 +289,7 @@ void main(){
     printf("Particle Array completed\n");
     densArray(particleArray, threedArray);
 	center_diff(I, J, K, grav_po, particleArray);
-    densArray(particleArray, threedArray);
+    // densArray(particleArray, threedArray);
     // deallocate memory
 	for (i = 0; i < M; i++) {
         free(particleArray[i]);
