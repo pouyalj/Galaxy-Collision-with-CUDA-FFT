@@ -10,13 +10,14 @@
 #include "dislin.h"
 
 #define N 256 // N is the sidelength of the image -> N^3 pixels in entire image
+#define M 100000000 //M is the number of particles.
 #define block_size_x 2 
 #define block_size_y 2
 #define block_size_z 2
 
 float den_array[N][N][N];
 float grav_po[N][N][N];
-float part_array[N][6];
+float part_array[M][6];
 float image[N/2][N/2];
 
 __global__ void real2complex(cufftComplex *c, float *a, int n);
@@ -165,6 +166,61 @@ void make_image(float array[N][N][N], const char *output_name)
 	disfin();
 }
 
+void *CM_finder(int galaxy_ID, float xyz_array[3])
+{
+	/*
+	Fills xyz_array with the z, y, and z values of the CM of
+	a given galaxy, in that order.
+	galaxy_ID is 1 for galaxy 1 and 2 for galaxy 2.
+	*/
+	int i, n;
+	
+	if (galaxy_ID == 1) n = 0;
+	else n = M/2;
+	
+	#pragma omp for
+	for (i = 0; i < M/2; i ++)
+	{
+		xyz_array[0] = part_array[i+n][0];
+		xyz_array[1] = part_array[i+n][1];
+		xyz_array[2] = part_array[i+n][2];
+	}
+	
+	xyz_array[0] /= (float)M/2;
+	xyz_array[1] /= (float)M/2;
+	xyz_array[2] /= (float)M/2;
+}
+
+void initial_velocity(int galaxy_ID)
+{
+	float CM_array[3];
+	CM_finder(galaxy_ID, xyz_array[3]);
+	
+	int i, n;
+	float x, y, z, r, v;
+	
+	if (galaxy_ID == 1) n = 0;
+	else n = M/2;
+	
+	#pragma omp for
+	for (i = 0; i < M/2; i ++)
+	{
+		x = xyz_array[0] - part_array[i+n][0];
+		y = xyz_array[1] - part_array[i+n][1];
+		z = xyz_array[2] - part_array[i+n][2];
+		r = x*x + y*y + z*z;
+		r = pow(r, 0.5)
+		
+		v = //pow(G*m*M/r, 0.5); need the unit of time to know the value of G
+		
+		//from there I need the direction it moves from there.
+	}
+	
+	pow(value, 0.5);
+	
+	//Also should add the 402000 km/h here
+}
+
 int main()
 {
 	int i, j, k;
@@ -187,6 +243,8 @@ int main()
 	//update particle with potential
 	
 	//end.
+	
+	return 0;
 
 }
 
