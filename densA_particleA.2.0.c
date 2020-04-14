@@ -17,7 +17,7 @@
 // #define M 64
 // // #define N 64
 #define M 100000000
-#define N 8
+#define N 7
 
 #define I 256
 #define J 256
@@ -82,16 +82,46 @@ void create_particle_Array(float **particleArray) {
 
     printf("Starting to populate the particle array\n");
     // assign values to allocated memory
-    for (i = 0; i < (int)(M*0.05); i++) {
+    for (i = 0; i < (int)(M*0.05/2); i++) {
         for (j = 0; j < 2; j++) {
-            particleArray[i][j] = (float)(rand()%1001)/1000; // rand() % (max_number + 1 - minimum_number) + minimum_number
+            particleArray[i][j] = (float)(rand()%1001)/1000 + 96.0; // rand() % (max_number + 1 - minimum_number) + minimum_number
         }
 		for (j=2;j<3;j++){
 			particleArray[i][j] = (float)(rand()%(50+1))/1000;
 		}
+
+		for (j=3;j<5;j++){
+
+		}
     }
-    for (index=1; index<13; index++){
-        for (i = (int)(0.05*M+((index-1)*0.095)); i < (int)(0.05*M+((index)*0.095)); i++) {
+    for (index=1; index<11; index++){
+        for (i = (int)(M*0.05/2+((index-1)*0.095*M/2)); i < (int)(M*0.05/2+((index)*0.095*M/2)); i++) {
+            max_number = 1000*(index+1);
+            min_number = 1000*index;
+            for (j = 0; j < 2; j++) {
+                particleArray[i][j] = ((float)(rand()%(max_number+1-min_number))+(float)min_number)/1000;
+            }
+			for (j=2;j<3;j++){
+				particleArray[i][j] = (float)(rand()%(150+1))/1000;
+			}
+        }
+    }
+
+	for (i = (int)(M*0.05/2+((10)*0.095*M/2)); i < (int)(M*0.05/2+((10)*0.095*M/2))+(int)(M*0.05/2); i++) {
+        for (j = 0; j < 2; j++) {
+            particleArray[i][j] = (float)(rand()%1001)/1000 + 96.0; // rand() % (max_number + 1 - minimum_number) + minimum_number
+        }
+		for (j=2;j<3;j++){
+			particleArray[i][j] = (float)(rand()%(50+1))/1000;
+		}
+
+		for (j=3;j<5;j++){
+
+		}
+    }
+
+	for (index=11; index<21; index++){
+        for (i = (int)(M*0.05+((index-1)*0.095*M/2)); i < (int)(M*0.05+((index)*0.095*M/2)); i++) {
             max_number = 1000*(index+1);
             min_number = 1000*index;
             for (j = 0; j < 2; j++) {
@@ -104,15 +134,15 @@ void create_particle_Array(float **particleArray) {
     }
 
 
-    // print the 2D array
-	for (i = 0; i < 10; i++)
-	{
-		for (j = 0; j < 3; j++) {
-            printf("%f\n", particleArray[i][j]);
+    // // print the 2D array
+	// for (i = 0; i < 10; i++)
+	// {
+	// 	for (j = 0; j < 3; j++) {
+    //         printf("%f\n", particleArray[i][j]);
 
-	   	}
-		printf("\n");
-	}
+	//    	}
+	// 	printf("\n");
+	// }
 
 	// // deallocate memory
 	// for (i = 0; i < M; i++) {
@@ -121,6 +151,11 @@ void create_particle_Array(float **particleArray) {
     // free(particleArray);
 }
 
+
+
+void center_of_mass(){
+
+}
 
 
 void main(){
