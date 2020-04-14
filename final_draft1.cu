@@ -268,6 +268,7 @@ void densArray(float **particleArray, float*** threedArray) {
 void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray) {
     int i, j, k, l;
     float v_half, x, v;
+	float CM0[3], CM1[3];
 
     // float gx[I][J][K], gy[I][J][K], gz[I][J][K];
     // float (*g)[I][J][K];
@@ -282,6 +283,15 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
     //     }
     // }
     // printf("g force created\n");
+	
+	for (i = 0; i < 3; i ++)
+	{
+		CM0[i] = 0;
+		CM1[i] = 0;
+	}
+	
+	CM_finder(0, CM0);
+	CM_finder(1, CM1);
 
 	#pragma omp for
     for(i=0; i<M; i++){
@@ -302,11 +312,11 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
             particleArray[i][l+3] = v;
         }
         for(l=1; l<2; l++){
-			X = particleArray[i][0] - CM1;
-			Y = particleArray[i][1] - CM1;
+			X = particleArray[i][0] - CM0[0];
+			Y = particleArray[i][1] - CM0[1];
 			R0 = sqrt(pow(X,2) + pow(Y,2));
-			X = particleArray[i][0] - CM2;
-			Y = particleArray[i][1] - CM2;
+			X = particleArray[i][0] - CM1[0];
+			Y = particleArray[i][1] - CM1[1];
             v_half = particleArray[i][l+3] + 595/(R0) + 595/(R1) +
             (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])+1][(int)round(particleArray[i][2])] 
             - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])-1][(int)round(particleArray[i][2])])/(2);
@@ -317,11 +327,11 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
             particleArray[i][l+3] = v;
         }
         for(l=2; l<3; l++){
-			X = particleArray[i][0] - CM1;
-			Y = particleArray[i][1] - CM1;
+			X = particleArray[i][0] - CM0[0];
+			Y = particleArray[i][1] - CM0[1];
 			R0 = sqrt(pow(X,2) + pow(Y,2));
-			X = particleArray[i][0] - CM2;
-			Y = particleArray[i][1] - CM2;
+			X = particleArray[i][0] - CM1[0];
+			Y = particleArray[i][1] - CM1[1];
             v_half = particleArray[i][l+3] + 595/(R0) + 595/(R1) +
             (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])+1] 
             - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])-1])/(2);
@@ -357,6 +367,12 @@ int main()
 	
 	t = 0.0;
 	dt = 1.0;
+	
+	#pragma omp for
+	for (i = 0; i < N; i++)
+		for (j = 0; j < N; j++)
+			for (k = 0; k < N; k++)
+				den_array[i][j][k] = 0;
 
 	#pragma omp for
 	for (i = 0; i < M; i++) {
