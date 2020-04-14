@@ -185,31 +185,36 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
 
     printf("updater function initiated\n");
     for(i=0; i<M; i++){
-        for(l=0; l<3; l++){
-            if(l==0){
-                v_half = particleArray[i][l+3] + (grav_po[(int)round(particleArray[i][0])+1][j][k]
-                 - grav_po[(int)round(particleArray[i][0])-1][j][k])/(2);
-                x = particleArray[i][l] + v_half;
-                v = v_half + (grav_po[(int)round(particleArray[i][0])+1][j][k]
-                 - grav_po[(int)round(particleArray[i][0])-1][j][k])/(2);
-                particleArray[i][l+3] = v;
-            }
-            else if(l==1){
-                v_half = particleArray[i][l+3] + (grav_po[i][(int)round(particleArray[i][1])+1][k] 
-                - grav_po[i][(int)round(particleArray[i][1])-1][k])/(2);
-                x = particleArray[i][l] + v_half;
-                v = v_half + (grav_po[i][(int)round(particleArray[i][1])+1][k] 
-                - grav_po[i][(int)round(particleArray[i][1])-1][k])/(2);
-                particleArray[i][l+3] = v;
-            }
-            else{
-                v_half = particleArray[i][l+3] + (grav_po[i][j][(int)round(particleArray[i][2])+1] 
-                - grav_po[i][j][(int)round(particleArray[i][2])-1])/(2);
-                x = particleArray[i][l] + v_half;
-                v = v_half + (grav_po[i][j][(int)round(particleArray[i][2])+1] 
-                - grav_po[i][j][(int)round(particleArray[i][2])-1])/(2);
-                particleArray[i][l+3] = v;
-            }
+        for(l=0; l<1; l++){
+            v_half = particleArray[i][l+3] + 
+            (grav_po[(int)round(particleArray[i][0])+1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]
+                - grav_po[(int)round(particleArray[i][0])-1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])])/(2);
+            x = particleArray[i][l] + v_half;
+            v = v_half + 
+            (grav_po[(int)round(particleArray[i][0])+1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]
+                - grav_po[(int)round(particleArray[i][0])-1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])])/(2);
+            particleArray[i][l+3] = v;
+        }
+        for(l=1; l<2; l++){
+            v_half = particleArray[i][l+3] + 
+            (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])+1][(int)round(particleArray[i][2])] 
+            - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])-1][(int)round(particleArray[i][2])])/(2);
+            x = particleArray[i][l] + v_half;
+            v = v_half + 
+            (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])+1][(int)round(particleArray[i][2])] 
+            - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])-1][(int)round(particleArray[i][2])])/(2);
+            particleArray[i][l+3] = v;
+        }
+        for(l=2; l<3; l++){
+            v_half = particleArray[i][l+3] + 
+            (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])+1] 
+            - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])-1])/(2);
+            x = particleArray[i][l] + v_half;
+            v = v_half + 
+            (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])+1] 
+            - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])-1])/(2);
+            particleArray[i][l+3] = v;
+        }
             // move all particles
             // updater(particleArray[i][l+3], particleArray[i][l],
             // *g[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]);
@@ -221,12 +226,10 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
             // *g[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]/2;
             // particleArray[i][l] = x;
             // particleArray[i][l+3] = v;
-
-        }
     }
 
-    // update density array (TDB)
-    printf("density array updater initiated\n");
+    // // update density array (TDB)
+    // printf("density array updater initiated\n");
 
     printf("all arrays updated\n");
 }
