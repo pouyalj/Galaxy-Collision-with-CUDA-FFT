@@ -110,8 +110,7 @@ void FFT_poisson(float den_array[N][N][N], float grav_po[N][N][N])
 	cudaFree(k_xyz_d);
 }
 
-
-void make_image(float array[N][N][N], const char *output_name, const char *title)
+void make_image(float array[N][N][N], const char *output_name, const char *title0)
 {
 	int x, y, z;
 	float Max = -500.0, Min = 500.0;
@@ -150,7 +149,7 @@ void make_image(float array[N][N][N], const char *output_name, const char *title
 	pagera();
 	hwfont();
 
-	titlin(title, 4);
+	titlin(title0, 4);
 	//titlin("anthing below", 2)
 
 	name("X [kP]", "x");
@@ -171,7 +170,7 @@ void make_image(float array[N][N][N], const char *output_name, const char *title
 	disfin();
 }
 
-void *CM_finder(int galaxy_ID, float xyz_array[3])
+void CM_finder(int galaxy_ID, float xyz_array[3], float **part_array)
 {
 	/*
 	Fills xyz_array with the z, y, and z values of the CM of
@@ -186,14 +185,15 @@ void *CM_finder(int galaxy_ID, float xyz_array[3])
 	#pragma omp for
 	for (i = 0; i < M/2; i ++)
 	{
-		xyz_array[0] = part_array[i+n][0];
-		xyz_array[1] = part_array[i+n][1];
-		xyz_array[2] = part_array[i+n][2];
+		xyz_array[0] += part_array[i+n][0];
+		xyz_array[1] += part_array[i+n][1];
+		xyz_array[2] += part_array[i+n][2];
 	}
 	
 	xyz_array[0] /= (float)M/2;
 	xyz_array[1] /= (float)M/2;
 	xyz_array[2] /= (float)M/2;
+
 }
 /*
 void initial_velocity(int galaxy_ID)
@@ -226,8 +226,8 @@ void initial_velocity(int galaxy_ID)
 	//Also should add the 402000 km/h here
 }*/
 
-void densArray(float **particleArray, float*** threedArray) {
-	int i, j, k = 0;
+void densArray(float **particleArray, float threedArray[N][N][N]) {
+	int i = 0;
     // dynamically allocate memory of size M*N*O
 	// assign values to allocated memory
 	/*
@@ -245,7 +245,8 @@ void densArray(float **particleArray, float*** threedArray) {
 			}
 	}*/
 
-    // assign values to allocated memory
+	// assign values to allocated memory
+	printf("density array intitiation complete\n");
 	#pragma omp for
 	for (i=0; i < M; i++) {
         // printf("%d\n", i);
@@ -254,6 +255,7 @@ void densArray(float **particleArray, float*** threedArray) {
         threedArray[(int)floorf(particleArray[i][0])][(int)floorf(particleArray[i][1])][(int)floorf(particleArray[i][2])] =
         threedArray[(int)floorf(particleArray[i][0])][(int)floorf(particleArray[i][1])][(int)floorf(particleArray[i][2])] + 1;
 	}
+	printf("Density Array completed\n");
     // // print the 3D array
 	// for (i = 0; i < I; i++)
 	// {
@@ -265,9 +267,9 @@ void densArray(float **particleArray, float*** threedArray) {
 	// }
 }
 
-void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray) {
-    int i, j, k, l;
-    float v_half, x, v;
+void center_diff(int xN, int yN, int zN, float grav_po[N][N][N], float **particleArray) {
+    int i, l;
+    float v_half, x, v, X, Y, R0, R1;
 	float CM0[3], CM1[3];
 
     // float gx[I][J][K], gy[I][J][K], gz[I][J][K];
@@ -283,15 +285,15 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
     //     }
     // }
     // printf("g force created\n");
-	
+	printf("updater function initiated\n");
 	for (i = 0; i < 3; i ++)
 	{
 		CM0[i] = 0;
 		CM1[i] = 0;
 	}
 	
-	CM_finder(0, CM0);
-	CM_finder(1, CM1);
+	CM_finder(0, CM0, particleArray);
+	CM_finder(1, CM1, particleArray);
 
 	#pragma omp for
     for(i=0; i<M; i++){
@@ -310,6 +312,7 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
             (grav_po[(int)round(particleArray[i][0])+1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]
                 - grav_po[(int)round(particleArray[i][0])-1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])])/(2);
             particleArray[i][l+3] = v;
+			particleArray[i][l] = x;
         }
         for(l=1; l<2; l++){
 			X = particleArray[i][0] - CM0[0];
@@ -325,6 +328,7 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
             (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])+1][(int)round(particleArray[i][2])] 
             - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])-1][(int)round(particleArray[i][2])])/(2);
             particleArray[i][l+3] = v;
+			particleArray[i][l] = x;
         }
         for(l=2; l<3; l++){
 			X = particleArray[i][0] - CM0[0];
@@ -340,6 +344,7 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
             (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])+1] 
             - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])-1])/(2);
             particleArray[i][l+3] = v;
+			particleArray[i][l] = x;
         }
             // move all particles
             // updater(particleArray[i][l+3], particleArray[i][l],
@@ -352,7 +357,8 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
             // *g[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]/2;
             // particleArray[i][l] = x;
             // particleArray[i][l+3] = v;
-    }
+	}
+	printf("all arrays updated\n");
 
     // // update density array (TDB)
     // printf("density array updater initiated\n");
@@ -361,9 +367,9 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
 int main()
 {
 	//initialize particle array without velocity.
-	int i, j, k, index, max_number, min_number, counter;
+	int i, j, k, index;//, max_number, min_number, counter;
 	float t, dt, X, Y, R, V;
-	float *particleArray = (float *)malloc(M * sizeof(float *));
+	float **particleArray = (float **)malloc(M * sizeof(float **));
 	
 	t = 0.0;
 	dt = 1.0;
@@ -372,11 +378,11 @@ int main()
 	for (i = 0; i < N; i++)
 		for (j = 0; j < N; j++)
 			for (k = 0; k < N; k++)
-				den_array[i][j][k] = 0;
+				den_array[i][j][k] = 0.0;
 
 	#pragma omp for
 	for (i = 0; i < M; i++) {
-		particleArray[i] = (float *)malloc(M * sizeof(float*));
+		particleArray[i] = (float *)malloc(7 * sizeof(float*));
 
 		if (particleArray[i] == NULL) {
 			fprintf(stderr, "Out of memory");
@@ -384,6 +390,7 @@ int main()
 		}
 	}
 
+	printf("Starting to populate the particle array for G1\n");
 	// first galaxy population
 	#pragma omp for
     for (i = 0; i < (int)(M*0.05/2); i++) {
@@ -422,6 +429,8 @@ int main()
 		}
 	}
 
+
+	printf("Starting to populate the particle array for G2\n");
 	// second galaxy population
 	#pragma omp for
 	for (i = (int)(M*0.05/2+((10)*0.095*M/2)); i < (int)(M*0.05/2+((10)*0.095*M/2))+(int)(M*0.05/2); i++) {
@@ -458,6 +467,7 @@ int main()
 		particleArray[i][6] = 1.0; // 1.0 is indicator for Andromeda
 	}
 	
+	printf("Particle Array completed\n");
 	//create initial velocity, for each array.
 	
 	///Repeat until finished.
@@ -465,29 +475,29 @@ int main()
 	{
 		densArray(particleArray, den_array);
 		FFT_poisson(den_array, grav_po);
-		enter_diff(256, 256, 256, grav_po, particleArray);
-		
-		if (time == 0.0)
+		center_diff(256, 256, 256, grav_po, particleArray);
+
+		if (t == 0.0)
 		{
 			make_image(den_array, "Initial.png", "Initial density of the system");
 		}
 		
-		if (time == 125.0)
+		if (t == 125.0)
 		{
 			make_image(den_array, "fourth.png", "Density of the system after 1,250,000 years");
 		}
 		
-		if (time == 250.0)
+		if (t == 250.0)
 		{
 			make_image(den_array, "half.png", "Density of the system after 2,500,000 years");
 		}
 		
-		if (time == 375.0)
+		if (t == 375.0)
 		{
 			make_image(den_array, "three_fourths.png", "Density of the system after 3,750,000 years");
 		}
 		
-		time += dt;
+		t += dt;
 	}
 	
 	//Fill density array with both galaxies
@@ -496,7 +506,7 @@ int main()
 	
 	//end.
 	
-	make_image(den_array, "final.png", "Density of the system after 5,000,000 years");
+	//make_image(den_array, "final.png", "Density of the system after 5,000,000 years");
 	
 	return 0;
 
