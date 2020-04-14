@@ -17,7 +17,7 @@
 
 float den_array[N][N][N];
 float grav_po[N][N][N];
-float particleArray[M][6];
+//float particleArray[M][7];
 float image[N/2][N/2];
 
 __global__ void real2complex(cufftComplex *c, float *a, int n);
@@ -47,9 +47,12 @@ void FFT_poisson(float den_array[N][N][N], float grav_po[N][N][N])
 				//Where 1.4006 is G in units kPc**3/solar_mass * 10kyears
 
 	float* den_inital = (float *)malloc(sizeof(float) * N * N * N);
+
+	#pragma omp for
 	for (i = 0; i < N * N; i++)
 		den_inital[i] = den[i];
 
+	#pragma omp for
 	for (i = 0; i < N; i++)
 	{
 		if (i < N/2)
@@ -240,11 +243,9 @@ void densArray(float **particleArray, float*** threedArray) {
 				exit(0);
 			}
 	}*/
-	
-	}
-    printf("density array intitiation complete\n");
 
     // assign values to allocated memory
+	#pragma omp for
 	for (i=0; i < M; i++) {
         // printf("%d\n", i);
         // printf("%d\n", (int)floorf(particleArray[i][0]));
@@ -261,7 +262,6 @@ void densArray(float **particleArray, float*** threedArray) {
 	// 			printf("%f\n", threedArray[i][j][k]);
 	//    	}
 	// }
-    printf("Density Array completed\n");
 }
 
 void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray) {
@@ -282,7 +282,7 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
     // }
     // printf("g force created\n");
 
-    printf("updater function initiated\n");
+	#pragma omp for
     for(i=0; i<M; i++){
         for(l=0; l<1; l++){
             v_half = particleArray[i][l+3] + 
@@ -329,34 +329,59 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
 
     // // update density array (TDB)
     // printf("density array updater initiated\n");
-
-    printf("all arrays updated\n");
 }
 
 int main()
 {
 	//initialize particle array without velocity.
 	int i, j, k, index, max_number, min_number, counter;
-	float t, dt;
+	float t, dt, X, Y, R, V;
+	float *particleArray = (float *)malloc(M * sizeof(float *));
 	
 	t = 0.0;
 	dt = 1.0;
 
+	#pragma omp for
+	for (i = 0; i < M; i++) {
+		particleArray[i] = (float *)malloc(M * sizeof(float*));
+
+		if (particleArray[i] == NULL) {
+			fprintf(stderr, "Out of memory");
+			exit(0);
+		}
+	}
 
 	// first galaxy population
+	#pragma omp for
     for (i = 0; i < (int)(M*0.05/2); i++) {
         particleArray[i][0] = 2*1.41*cos((float)(rand()%629)/100) + 96.0;
         particleArray[i][1] = 2*1.41*sin((float)(rand()%629)/100) + 96.0;
         particleArray[i][2] = (float)(rand()%(50+1))/1000 + 128.0; // rand() % (max_number + 1 - minimum_number) + minimum_number
-
+        X = particleArray[i][0] - 96;
+        Y = particleArray[i][1] - 96;
+        R = sqrt(pow(X,2) + pow(Y,2));
+        V = sqrt(1190*R);
+        particleArray[i][3] = Y/R*V;
+        particleArray[i][4] = X/R*V;
+        particleArray[i][5] = 0;
     }
+	
+	#pragma omp for
     for (index=1; index<11; index++){
         for (i = (int)(M*0.05/2+((index-1)*0.095*M/2)); i < (int)(M*0.05/2+((index)*0.095*M/2)); i++) {
             particleArray[i][0] = (2+index)*1.41*cos((float)(rand()%629)/100) + 96.0;
             particleArray[i][1] = (2+index)*1.41*sin((float)(rand()%629)/100) + 96.0;
             particleArray[i][2] = (float)(rand()%(50+1))/1000 + 128.0;
+            X = particleArray[i][0] - 96;
+            Y = particleArray[i][1] - 96;
+            R = sqrt(pow(X,2) + pow(Y,2));
+            V = sqrt(1190*R);
+            particleArray[i][3] = Y/R*V;
+            particleArray[i][4] = X/R*V;
         }
     }
+	
+	#pragma omp for
 	for (i = 0; i < (int)(M/2); i++) {
 		for (j=6;j<7;j++){
 			particleArray[i][j] = 0.0; // 0.0 is indicator for Milky Way
@@ -364,34 +389,80 @@ int main()
 	}
 
 	// second galaxy population
+	#pragma omp for
 	for (i = (int)(M*0.05/2+((10)*0.095*M/2)); i < (int)(M*0.05/2+((10)*0.095*M/2))+(int)(M*0.05/2); i++) {
         particleArray[i][0] = 2*1.41*cos((float)(rand()%629)/100)  + 160.0;
         particleArray[i][1] = 2*1.41*sin((float)(rand()%629)/100)  + 160.0;
         particleArray[i][2] = (float)(rand()%(50+1))/1000 + 128.0;
+        X = particleArray[i][0] - 96;
+        Y = particleArray[i][1] - 96;
+        R = sqrt(pow(X,2) + pow(Y,2));
+        V = sqrt(1190*R);
+        particleArray[i][3] = Y/R*V;
+        particleArray[i][4] = X/R*V;
+        particleArray[i][5] = 0;
     }
 
+	#pragma omp for
 	for (index=11; index<21; index++){
         for (i = (int)(M*0.05+((index-1)*0.095*M/2)); i < (int)(M*0.05+((index)*0.095*M/2)); i++) {
             particleArray[i][0] = (2+index-10)*1.41*cos((float)(rand()%629)/100)  + 160.0;
             particleArray[i][1] = (2+index-10)*1.41*sin((float)(rand()%629)/100)  + 160.0;
             particleArray[i][2] = (float)(rand()%(150+1))/1000 + 128.0;
+            X = particleArray[i][0] - 96;
+            Y = particleArray[i][1] - 96;
+            R = sqrt(pow(X,2) + pow(Y,2));
+            V = sqrt(1190*R);
+            particleArray[i][3] = Y/R*V;
+            particleArray[i][4] = X/R*V;
+            particleArray[i][5] = 0;
         }
     }
 
+	#pragma omp for
 	for (i = (int)(M/2); i < M; i++) {
-		for (j=6;j<7;j++){
-			particleArray[i][j] = 1.0; // 1.0 is indicator for Andromeda
-		}
+		particleArray[i][6] = 1.0; // 1.0 is indicator for Andromeda
 	}
 	
 	//create initial velocity, for each array.
 	
 	///Repeat until finished.
+	while (t < 500)
+	{
+		densArray(particleArray, den_array);
+		FFT_poisson(den_array, grav_po);
+		enter_diff(256, 256, 256, grav_po, particleArray);
+		
+		if (time == 0.0)
+		{
+			make_image(den_array, "Initial.png", "Initial density of the system");
+		}
+		
+		if (time == 125.0)
+		{
+			make_image(den_array, "fourth.png", "Density of the system after 1,250,000 years");
+		}
+		
+		if (time == 250.0)
+		{
+			make_image(den_array, "half.png", "Density of the system after 2,500,000 years");
+		}
+		
+		if (time == 375.0)
+		{
+			make_image(den_array, "three_fourths.png", "Density of the system after 3,750,000 years");
+		}
+		
+		time += dt;
+	}
+	
 	//Fill density array with both galaxies
 	//Find potential
 	//update particle with potential
 	
 	//end.
+	
+	make_image(den_array, "final.png", "Density of the system after 5,000,000 years");
 	
 	return 0;
 
