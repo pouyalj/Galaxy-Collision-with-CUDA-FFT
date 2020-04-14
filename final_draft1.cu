@@ -337,6 +337,10 @@ int main()
 {
 	//initialize particle array without velocity.
 	int i, j, k, index, max_number, min_number, counter;
+	float t, dt;
+	
+	t = 0.0;
+	dt = 1.0;
 
 
 	// first galaxy population
@@ -380,15 +384,7 @@ int main()
 		}
 	}
 	
-	//make density array of G1.
-	//call to find potential.
-	//use potential to find initial velocity.
-	//update particle array.
-	
-	//make density array of G2
-	//call to find potential.
-	//use potential to find initial velocity.
-	//update particle array.
+	//create initial velocity, for each array.
 	
 	///Repeat until finished.
 	//Fill density array with both galaxies
