@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include<stdio.h>
 #include <iostream>
+#include<time.h>
 
 #include "dislin.h"
 
@@ -194,7 +195,7 @@ void *CM_finder(int galaxy_ID, float xyz_array[3])
 	xyz_array[1] /= (float)M/2;
 	xyz_array[2] /= (float)M/2;
 }
-
+/*
 void initial_velocity(int galaxy_ID)
 {
 	float CM_array[3];
@@ -223,7 +224,7 @@ void initial_velocity(int galaxy_ID)
 	pow(value, 0.5);
 	
 	//Also should add the 402000 km/h here
-}
+}*/
 
 void densArray(float **particleArray, float*** threedArray) {
 	int i, j, k = 0;
@@ -360,9 +361,9 @@ int main()
         X = particleArray[i][0] - 96;
         Y = particleArray[i][1] - 96;
         R = sqrt(pow(X,2) + pow(Y,2));
-        V = sqrt(1190*R);
-        particleArray[i][3] = Y/R*V;
-        particleArray[i][4] = X/R*V;
+        V = sqrt(1190.0*R);
+        particleArray[i][3] = Y/R*V + 0.04;
+        particleArray[i][4] = X/R*V + 0.04;
         particleArray[i][5] = 0;
     }
 	
@@ -375,9 +376,10 @@ int main()
             X = particleArray[i][0] - 96;
             Y = particleArray[i][1] - 96;
             R = sqrt(pow(X,2) + pow(Y,2));
-            V = sqrt(1190*R);
-            particleArray[i][3] = Y/R*V;
-            particleArray[i][4] = X/R*V;
+            V = sqrt(1190.0*R);
+            particleArray[i][3] = Y/R*V + 0.04;
+            particleArray[i][4] = X/R*V + 0.04;
+			particleArray[i][5] = 0;
         }
     }
 	
@@ -397,9 +399,9 @@ int main()
         X = particleArray[i][0] - 96;
         Y = particleArray[i][1] - 96;
         R = sqrt(pow(X,2) + pow(Y,2));
-        V = sqrt(1190*R);
-        particleArray[i][3] = Y/R*V;
-        particleArray[i][4] = X/R*V;
+        V = sqrt(1190.0*R);
+        particleArray[i][3] = Y/R*V - 0.04;
+        particleArray[i][4] = X/R*V - 0.04;
         particleArray[i][5] = 0;
     }
 
@@ -413,8 +415,8 @@ int main()
             Y = particleArray[i][1] - 96;
             R = sqrt(pow(X,2) + pow(Y,2));
             V = sqrt(1190*R);
-            particleArray[i][3] = Y/R*V;
-            particleArray[i][4] = X/R*V;
+            particleArray[i][3] = Y/R*V - 0.04;
+            particleArray[i][4] = X/R*V - 0.04;
             particleArray[i][5] = 0;
         }
     }
