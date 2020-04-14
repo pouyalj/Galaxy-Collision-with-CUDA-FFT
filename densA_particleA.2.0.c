@@ -24,7 +24,6 @@
 #define K 256
 
 
-
 // Dynamically Allocate Memory for 3D Array
 void densArray(float **particleArray, float*** threedArray) {
 	int i, j, k = 0;
@@ -67,7 +66,7 @@ void densArray(float **particleArray, float*** threedArray) {
 
 // Dynamically Allocate Memory for 3D Array
 void create_particle_Array(float **particleArray) {
-	int i, j, k;
+	int i, j, k, index, max_number, min_number;
     // dynamically allocate memory of size M*N*O
     
 
@@ -83,22 +82,37 @@ void create_particle_Array(float **particleArray) {
 
     printf("Starting to populate the particle array\n");
     // assign values to allocated memory
-	for (i = 0; i < M; i++) {
-		for (j = 0; j < N; j++) {
-			particleArray[i][j] = rand() % 8;
+    for (i = 0; i < (int)(M*0.05); i++) {
+        for (j = 0; j < 2; j++) {
+            particleArray[i][j] = (float)(rand()%1001)/1000; // rand() % (max_number + 1 - minimum_number) + minimum_number
+        }
+		for (j=2;j<3;j++){
+			particleArray[i][j] = (float)(rand()%(50+1))/1000;
+		}
+    }
+    for (index=1; index<13; index++){
+        for (i = (int)(0.05*M+((index-1)*0.095)); i < (int)(0.05*M+((index)*0.095)); i++) {
+            max_number = 1000*(index+1);
+            min_number = 1000*index;
+            for (j = 0; j < 2; j++) {
+                particleArray[i][j] = ((float)(rand()%(max_number+1-min_number))+(float)min_number)/1000;
+            }
+			for (j=2;j<3;j++){
+				particleArray[i][j] = (float)(rand()%(150+1))/1000;
+			}
         }
     }
 
 
-    // // print the 2D array
-	// for (i = 0; i < M; i++)
-	// {
-	// 	for (j = 0; j < N; j++) {
-    //         printf("%f\n", particleArray[i][j]);
+    // print the 2D array
+	for (i = 0; i < 10; i++)
+	{
+		for (j = 0; j < 3; j++) {
+            printf("%f\n", particleArray[i][j]);
 
-	//    	}
-	// 	printf("\n");
-	// }
+	   	}
+		printf("\n");
+	}
 
 	// // deallocate memory
 	// for (i = 0; i < M; i++) {
