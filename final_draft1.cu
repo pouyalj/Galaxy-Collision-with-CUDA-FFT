@@ -337,22 +337,7 @@ int main()
 {
 	//initialize particle array without velocity.
 	int i, j, k, index, max_number, min_number, counter;
-    // dynamically allocate memory of size M*N*O
-    
 
-    // assign values to allocated memory
-	/*
-	for (i = 0; i < M; i++) {
-		particleArray[i] = (float *)malloc(N * sizeof(float*));
-
-		if (particleArray[i] == NULL) {
-			fprintf(stderr, "Out of memory");
-			exit(0);
-		}
-	}*/
-
-    printf("Starting to populate the particle array\n");
-    // assign values to allocated memory
 
 	// first galaxy population
     for (i = 0; i < (int)(M*0.05/2); i++) {
