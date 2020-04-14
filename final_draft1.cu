@@ -17,7 +17,7 @@
 
 float den_array[N][N][N];
 float grav_po[N][N][N];
-float part_array[M][6];
+float particleArray[M][6];
 float image[N/2][N/2];
 
 __global__ void real2complex(cufftComplex *c, float *a, int n);
@@ -43,7 +43,8 @@ void FFT_poisson(float den_array[N][N][N], float grav_po[N][N][N])
 	for (x = 0; x < N; x++)
 		for (y = 0; y < N; y++)
 			for (z = 0; z < N; z++)
-				den[x + y*N + z*N*N] = den_array[x][y][z];
+				den[x + y*N + z*N*N] = 4.0 * 3.14159 * 1.4006 * den_array[x][y][z];
+				//Where 1.4006 is G in units kPc**3/solar_mass * 10kyears
 
 	float* den_inital = (float *)malloc(sizeof(float) * N * N * N);
 	for (i = 0; i < N * N; i++)
@@ -221,11 +222,178 @@ void initial_velocity(int galaxy_ID)
 	//Also should add the 402000 km/h here
 }
 
+void densArray(float **particleArray, float*** threedArray) {
+	int i, j, k = 0;
+    // dynamically allocate memory of size M*N*O
+	// assign values to allocated memory
+	/*
+	for (i = 0; i < I; i++) {
+		threedArray[i] = (float**)malloc(J * sizeof(float*));
+        if (threedArray[i] == NULL) {
+			fprintf(stderr, "Out of memory");
+			exit(0);
+		}
+        for (j = 0; j < J; j++) {
+			threedArray[i][j] = (float*)malloc(K * sizeof(float));
+            if (threedArray[i][j] == NULL) {
+				fprintf(stderr, "Out of memory");
+				exit(0);
+			}
+	}*/
+	
+	}
+    printf("density array intitiation complete\n");
+
+    // assign values to allocated memory
+	for (i=0; i < M; i++) {
+        // printf("%d\n", i);
+        // printf("%d\n", (int)floorf(particleArray[i][0]));
+        // printf("%d %d %d \n", (int)floorf(particleArray[i][0]), (int)floorf(particleArray[i][1]), (int)floorf(particleArray[i][2]));
+        threedArray[(int)floorf(particleArray[i][0])][(int)floorf(particleArray[i][1])][(int)floorf(particleArray[i][2])] =
+        threedArray[(int)floorf(particleArray[i][0])][(int)floorf(particleArray[i][1])][(int)floorf(particleArray[i][2])] + 1;
+	}
+    // // print the 3D array
+	// for (i = 0; i < I; i++)
+	// {
+	// 	for (j = 0; j < J; j++)
+	// 	{
+	// 		for (k = 0; k < K; k++)
+	// 			printf("%f\n", threedArray[i][j][k]);
+	//    	}
+	// }
+    printf("Density Array completed\n");
+}
+
+void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray) {
+    int i, j, k, l;
+    float v_half, x, v;
+
+    // float gx[I][J][K], gy[I][J][K], gz[I][J][K];
+    // float (*g)[I][J][K];
+
+    // for(i=1; i<xN; i++){
+    //     for(j=1; j<yN-1; j++){
+    //         for(k=1; k<zN-1; k++){
+    //             gx[i][j][k] = (grav_po[i+1][j][k] - grav_po[i-1][j][k])/(2); // get g for each directions
+    //             gy[i][j][k] = (grav_po[i][j+1][k] - grav_po[i][j-1][k])/(2);
+    //             gz[i][j][k] = (grav_po[i][j][k+1] - grav_po[i][j][k-1])/(2);
+    //         }
+    //     }
+    // }
+    // printf("g force created\n");
+
+    printf("updater function initiated\n");
+    for(i=0; i<M; i++){
+        for(l=0; l<1; l++){
+            v_half = particleArray[i][l+3] + 
+            (grav_po[(int)round(particleArray[i][0])+1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]
+                - grav_po[(int)round(particleArray[i][0])-1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])])/(2);
+            x = particleArray[i][l] + v_half;
+            v = v_half + 
+            (grav_po[(int)round(particleArray[i][0])+1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]
+                - grav_po[(int)round(particleArray[i][0])-1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])])/(2);
+            particleArray[i][l+3] = v;
+        }
+        for(l=1; l<2; l++){
+            v_half = particleArray[i][l+3] + 
+            (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])+1][(int)round(particleArray[i][2])] 
+            - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])-1][(int)round(particleArray[i][2])])/(2);
+            x = particleArray[i][l] + v_half;
+            v = v_half + 
+            (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])+1][(int)round(particleArray[i][2])] 
+            - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])-1][(int)round(particleArray[i][2])])/(2);
+            particleArray[i][l+3] = v;
+        }
+        for(l=2; l<3; l++){
+            v_half = particleArray[i][l+3] + 
+            (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])+1] 
+            - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])-1])/(2);
+            x = particleArray[i][l] + v_half;
+            v = v_half + 
+            (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])+1] 
+            - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])-1])/(2);
+            particleArray[i][l+3] = v;
+        }
+            // move all particles
+            // updater(particleArray[i][l+3], particleArray[i][l],
+            // *g[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]);
+            // v_half = particleArray[i][l+3] +
+            // *g[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]/2+
+            // 1190/(pow(particleArray[i][0],2)+pow(particleArray[i][1],2)+pow(particleArray[i][2],2));
+            // x = particleArray[i][l] + v_half;
+            // v = v_half +
+            // *g[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]/2;
+            // particleArray[i][l] = x;
+            // particleArray[i][l+3] = v;
+    }
+
+    // // update density array (TDB)
+    // printf("density array updater initiated\n");
+
+    printf("all arrays updated\n");
+}
+
 int main()
 {
-	int i, j, k;
-
 	//initialize particle array without velocity.
+	int i, j, k, index, max_number, min_number, counter;
+    // dynamically allocate memory of size M*N*O
+    
+
+    // assign values to allocated memory
+	/*
+	for (i = 0; i < M; i++) {
+		particleArray[i] = (float *)malloc(N * sizeof(float*));
+
+		if (particleArray[i] == NULL) {
+			fprintf(stderr, "Out of memory");
+			exit(0);
+		}
+	}*/
+
+    printf("Starting to populate the particle array\n");
+    // assign values to allocated memory
+
+	// first galaxy population
+    for (i = 0; i < (int)(M*0.05/2); i++) {
+        particleArray[i][0] = 2*1.41*cos((float)(rand()%629)/100) + 96.0;
+        particleArray[i][1] = 2*1.41*sin((float)(rand()%629)/100) + 96.0;
+        particleArray[i][2] = (float)(rand()%(50+1))/1000 + 128.0; // rand() % (max_number + 1 - minimum_number) + minimum_number
+
+    }
+    for (index=1; index<11; index++){
+        for (i = (int)(M*0.05/2+((index-1)*0.095*M/2)); i < (int)(M*0.05/2+((index)*0.095*M/2)); i++) {
+            particleArray[i][0] = (2+index)*1.41*cos((float)(rand()%629)/100) + 96.0;
+            particleArray[i][1] = (2+index)*1.41*sin((float)(rand()%629)/100) + 96.0;
+            particleArray[i][2] = (float)(rand()%(50+1))/1000 + 128.0;
+        }
+    }
+	for (i = 0; i < (int)(M/2); i++) {
+		for (j=6;j<7;j++){
+			particleArray[i][j] = 0.0; // 0.0 is indicator for Milky Way
+		}
+	}
+
+	// second galaxy population
+	for (i = (int)(M*0.05/2+((10)*0.095*M/2)); i < (int)(M*0.05/2+((10)*0.095*M/2))+(int)(M*0.05/2); i++) {
+        particleArray[i][0] = 2*1.41*cos((float)(rand()%629)/100)  + 160.0;
+        particleArray[i][1] = 2*1.41*sin((float)(rand()%629)/100)  + 160.0;
+        particleArray[i][2] = (float)(rand()%(50+1))/1000 + 128.0;
+    }
+
+	for (index=11; index<21; index++){
+        for (i = (int)(M*0.05+((index-1)*0.095*M/2)); i < (int)(M*0.05+((index)*0.095*M/2)); i++) {
+            particleArray[i][0] = (2+index-10)*1.41*cos((float)(rand()%629)/100)  + 160.0;
+            particleArray[i][1] = (2+index-10)*1.41*sin((float)(rand()%629)/100)  + 160.0;
+            particleArray[i][2] = (float)(rand()%(150+1))/1000 + 128.0;
+        }
+    }
+
+	for (i = (int)(M/2); i < M; i++) {
+		for (j=6;j<7;j++){
+			particleArray[i][j] = 1.0; // 1.0 is indicator for Andromeda
+		}
+	}
 	
 	//make density array of G1.
 	//call to find potential.
