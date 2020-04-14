@@ -286,31 +286,47 @@ void center_diff(int xN, int yN, int zN, float*** grav_po, float **particleArray
 	#pragma omp for
     for(i=0; i<M; i++){
         for(l=0; l<1; l++){
-            v_half = particleArray[i][l+3] + 
+			X = particleArray[i][0] - CM0[0];
+			Y = particleArray[i][1] - CM0[1];
+			R0 = sqrt(pow(X,2) + pow(Y,2));
+			X = particleArray[i][0] - CM1[0];
+			Y = particleArray[i][1] - CM1[1];
+			R1 = sqrt(pow(X,2) + pow(Y,2));
+            v_half = particleArray[i][l+3] + 595/(R0) + 595/(R1) +
             (grav_po[(int)round(particleArray[i][0])+1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]
                 - grav_po[(int)round(particleArray[i][0])-1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])])/(2);
             x = particleArray[i][l] + v_half;
-            v = v_half + 
+            v = v_half + 595/(R0) + 595/(R1) +
             (grav_po[(int)round(particleArray[i][0])+1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])]
                 - grav_po[(int)round(particleArray[i][0])-1][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])])/(2);
             particleArray[i][l+3] = v;
         }
         for(l=1; l<2; l++){
-            v_half = particleArray[i][l+3] + 
+			X = particleArray[i][0] - CM1;
+			Y = particleArray[i][1] - CM1;
+			R0 = sqrt(pow(X,2) + pow(Y,2));
+			X = particleArray[i][0] - CM2;
+			Y = particleArray[i][1] - CM2;
+            v_half = particleArray[i][l+3] + 595/(R0) + 595/(R1) +
             (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])+1][(int)round(particleArray[i][2])] 
             - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])-1][(int)round(particleArray[i][2])])/(2);
             x = particleArray[i][l] + v_half;
-            v = v_half + 
+            v = v_half + 595/(R0) + 595/(R1) +
             (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])+1][(int)round(particleArray[i][2])] 
             - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])-1][(int)round(particleArray[i][2])])/(2);
             particleArray[i][l+3] = v;
         }
         for(l=2; l<3; l++){
-            v_half = particleArray[i][l+3] + 
+			X = particleArray[i][0] - CM1;
+			Y = particleArray[i][1] - CM1;
+			R0 = sqrt(pow(X,2) + pow(Y,2));
+			X = particleArray[i][0] - CM2;
+			Y = particleArray[i][1] - CM2;
+            v_half = particleArray[i][l+3] + 595/(R0) + 595/(R1) +
             (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])+1] 
             - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])-1])/(2);
             x = particleArray[i][l] + v_half;
-            v = v_half + 
+            v = v_half + 595/(R0) + 595/(R1) +
             (grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])+1] 
             - grav_po[(int)round(particleArray[i][0])][(int)round(particleArray[i][1])][(int)round(particleArray[i][2])-1])/(2);
             particleArray[i][l+3] = v;
