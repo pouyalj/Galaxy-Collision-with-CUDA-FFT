@@ -40,9 +40,9 @@
 - **State:** The original three near-duplicate CUDA C files (now archived under `legacy/`, see §3.1)
   compile against CUDA 9.2 + cuFFT + DISLIN on a specific 2020 lab machine. Several correctness and
   performance bugs (see §3.6) mean the headline configuration (M = 100,000,000 particles) will not
-  realistically run as written. **Modernization status:** Stage 0 (scaffold & guardrails) is
-  **done** — see §7. The repo root now hosts the `galaxy_collision` Python package; Stage 1+ build
-  the real physics on top of it.
+  realistically run as written. **Modernization status:** Stages 0–1 are **done** — see §7. The
+  repo root hosts the `galaxy_collision` Python package with a scaffold, a tested (kpc, Myr, M☉)
+  unit system, and the SoA particle/grid data model; Stage 2+ build the physics on top of it.
 - **Goal (scoped):** Rebuild as **one portable source** (Taichi-style kernels compiling to
   CPU + CUDA + Metal), research-grade physics, **10–100M particles**, **Apple GPU as a
   first-class performance target**, with a **pluggable Poisson solver** (open-boundary multigrid
@@ -101,9 +101,11 @@ GalaxyCollision/
     │   ├── __init__.py
     │   ├── config.py                   # SimConfig schema + YAML load/dump (Stage 0)
     │   ├── sim.py                      # orchestration + `hello-sim` CLI (Stage 0)
+    │   ├── units.py                    # (kpc, Myr, M_sun) system + derived G (Stage 1)
+    │   ├── data.py                     # SoA particle/grid fields + memory estimator (Stage 1)
     │   ├── solver/                     # Poisson solvers — placeholder (Stage 3+)
     │   └── viz/                        # visualization — placeholder (Stage 7)
-    ├── tests/                          # test_config.py, test_hello_sim.py
+    ├── tests/                          # test_config, test_hello_sim, test_units, test_data
     ├── docs/development.md             # contributor quickstart
     └── legacy/                         # original 2020 CUDA source, preserved for reference
         ├── README.md                   # build notes + bug pointers
@@ -283,6 +285,7 @@ nvcc final_draft1.cu -Xcompiler -fopenmp \
 | D12 | Language / runtime | **Python ≥ 3.11** + Taichi kernels; `hatchling` build, `src/` layout | Owner (2026-06-16) |
 | D13 | CI & lint | **GitHub Actions** (origin is GitHub): install → `ruff` lint → `pytest` → CPU `hello-sim` smoke run | Owner (2026-06-16) |
 | D14 | Config format | **YAML** run configs (`pyyaml`), validated by the `SimConfig` schema | Owner (2026-06-16) |
+| D15 | Unit system | **(kpc, Myr, M☉)**; single `G ≈ 4.498×10⁻¹² kpc³ M☉⁻¹ Myr⁻²` *derived* from the standard `4.30091×10⁻³ pc M☉⁻¹ (km/s)²` and unit-tested | Owner (2026-06-16); resolves §9 Q2. Aligns dt=0.01 Myr with the 2020 code's 10⁴ yr step |
 
 ---
 
@@ -444,10 +447,10 @@ portable (the one thing a plain FFT is not under Taichi) and physically correct 
 
 ### 5.8 Proposed repo layout
 
-> **Stage 0 realized the scaffold of this layout** (see §3.1 for what exists on disk today):
-> `pyproject.toml`, `configs/`, `src/galaxy_collision/{config,sim}.py`, `solver/` + `viz/`
-> placeholders, `tests/`, `docs/`, and `legacy/`. Modules below without a file yet (`units.py`,
-> `data.py`, `ic.py`, `deposit.py`, the solver/integrator/diagnostics/io modules) land in Stages 1–7.
+> **Stages 0–1 realized the scaffold + foundations of this layout** (see §3.1 for what exists on
+> disk today): `pyproject.toml`, `configs/`, `src/galaxy_collision/{config,sim,units,data}.py`,
+> `solver/` + `viz/` placeholders, `tests/`, `docs/`, and `legacy/`. Modules below without a file
+> yet (`ic.py`, `deposit.py`, the solver/integrator/diagnostics/io modules) land in Stages 2–7.
 
 ```
 galaxy_collision/
@@ -501,13 +504,13 @@ The full, shareable version of this plan — with per-stage objectives, tasks, d
 criteria — is in **`Galaxy_Collision_Modernization_Plan.docx`** (a generated artifact, gitignored;
 this section is the tracked source of truth).
 
-> **Current status (2026-06-16):** Stage 0 ✅ done. Next: Stage 1 (units & data model).
+> **Current status (2026-06-16):** Stages 0–1 ✅ done. Next: Stage 2 (initial conditions).
 
 | Stage | Outcome | Backend | Exit gate | Status |
 |---|---|---|---|---|
 | **0 — Scaffold & guardrails** | Repo, build, CI, config schema; legacy `.cu` archived | — | CI green; a trivial `hello-sim` runs | ✅ **Done** (2026-06-16) |
-| **1 — Units & data model** | Unit system (G) + SoA particle/grid fields | CPU | G unit test passes; config round-trips | ⬜ Next |
-| **2 — Initial conditions** | Mass-derived N, disk+bulge sampling, central BH, 4v/2v setups | CPU | ICs match target mass/profile; reproducible from seed | ⬜ |
+| **1 — Units & data model** | Unit system (G) + SoA particle/grid fields | CPU | G unit test passes; config round-trips | ✅ **Done** (2026-06-16) |
+| **2 — Initial conditions** | Mass-derived N, disk+bulge sampling, central BH, 4v/2v setups | CPU | ICs match target mass/profile; reproducible from seed | ⬜ Next |
 | **3 — CPU reference (anchor)** | A *correct* sim: CIC + open-BC multigrid + KDK + softening + diagnostics + I/O | CPU | Plummer stays stable; two-body Kepler matches; energy drift < threshold | ⬜ |
 | **4 — Validation & FFT oracle** | Zero-padded isolated FFT + full test suite + paper reproduction | CPU/CUDA | Multigrid ≈ FFT within tolerance; paper figures reproduced | ⬜ |
 | **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | ⬜ |
@@ -544,15 +547,14 @@ suite** to count as done.
 **Resolved 2026-06-16:** particle count is derived from physical galaxy mass (D8); a massive central
 black hole is in scope (D9); dark matter is deferred (D10). Stage-0 toolchain settled: in-place on
 `master` (D11), Python ≥ 3.11 + Taichi (D12), GitHub Actions CI (D13), YAML configs (D14) — this
-resolves former Q4 (repo placement).
+resolves former Q4 (repo placement). Unit system standardized on **(kpc, Myr, M☉)** with a single
+derived, unit-tested G (D15) — this resolves former Q2.
 
 Still open:
 
 1. **Apple hardware:** do you have (or can you get) access to an M-series Mac for Metal validation,
    and which tier ("M5-like") are we optimizing for?
-2. **Unit system:** OK to standardize on **(kpc, Myr, M☉)** and derive everything from a single G?
-   (Stage 1 will pin this down unless you object.)
-3. **Real-time viewer:** is an in-process Taichi GGUI window sufficient, or do you want a standalone
+2. **Real-time viewer:** is an in-process Taichi GGUI window sufficient, or do you want a standalone
    app / web viewer?
 
 ---

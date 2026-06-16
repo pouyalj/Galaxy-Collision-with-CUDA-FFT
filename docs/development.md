@@ -41,6 +41,8 @@ hello-sim --backend cpu
 src/galaxy_collision/
   config.py        run-config schema + YAML loader (Stage 0)
   sim.py           orchestration + hello-sim CLI (Stage 0)
+  units.py         (kpc, Myr, M_sun) system + derived G (Stage 1)
+  data.py          SoA particle/grid fields + memory estimator (Stage 1)
   solver/          Poisson solvers — multigrid + FFT oracle (Stage 3+)
   viz/             realtime / movie / paper-repro output (Stage 7)
 configs/           YAML run configs (smoke.yaml is the baseline)
