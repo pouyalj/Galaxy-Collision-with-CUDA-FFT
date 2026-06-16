@@ -17,7 +17,8 @@
 > Any agent that touches the project is required to update AGENT.md *in the same change* whenever it:
 > - adds/moves/removes files or changes the repo layout (§3.1, §5.8),
 > - changes dependencies, build, CI, or config schema (§3.5, §5.8),
-> - completes or advances a stage, or alters its exit criteria (§7 — keep the status column current),
+> - completes or advances a stage, or alters its exit criteria (§7 — keep the status column current,
+>   **and update the Status line in `README.md`** so the user-facing status never lags),
 > - makes or revises a scoped decision (§4.2 Decision Record) or resolves an open question (§9),
 > - discovers, fixes, or introduces a notable bug/limitation (§3.6).
 >

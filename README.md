@@ -10,10 +10,11 @@ now being rebuilt as **one portable source** that runs on CPU, NVIDIA CUDA, and
 Apple-Silicon GPU via [Taichi](https://www.taichi-lang.org/), with research-grade
 physics at 10–100M particles.
 
-> **Status: Stage 0 (scaffold).** The package, config loader, CI, and a trivial
-> `hello-sim` smoke run are in place. Real physics arrives at Stage 3. See
-> [`AGENT.md`](AGENT.md) for the full architecture and staged plan, and
-> [`docs/development.md`](docs/development.md) to get started.
+> **Status: Stages 0–1 done.** Scaffold, config loader, CI, and a trivial
+> `hello-sim` are in place, plus a tested (kpc, Myr, M☉) unit system and the SoA
+> particle/grid data model. Next is Stage 2 (initial conditions); real physics
+> arrives at Stage 3. See [`AGENT.md`](AGENT.md) for the full architecture and
+> staged plan, and [`docs/development.md`](docs/development.md) to get started.
 
 ## Quickstart
 
