@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------------------
+# Generated / shareable artifacts (NOT source — AGENT.md is the source of truth)
+# Note: gitignore comments must be on their OWN line, never inline after a pattern.
+# ---------------------------------------------------------------------------
+# Word docs generated from AGENT.md (e.g. Galaxy_Collision_Modernization_Plan.docx)
+*.docx
+# Word lock/temp files
+~$*.docx
+
+# Build outputs
+*.out
+*.o
+*.obj
+*.exe
+build/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Node (docx toolchain)
+node_modules/
+
+# Simulation outputs (snapshots, frames, movies)
+outputs/
+snapshots/
+frames/
+*.h5
+*.hdf5
+*.npz
+*.npy
+*.mp4
+*.gif
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

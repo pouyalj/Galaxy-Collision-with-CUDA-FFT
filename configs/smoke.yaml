@@ -1,0 +1,12 @@
+# Stage-0 smoke configuration: a one-step, no-op simulation on CPU.
+# Used by `hello-sim` and CI to protect the green baseline.
+name: hello-sim
+backend: cpu
+n_particles: 16
+dt: 0.01          # Myr (the 2020 code's dt=1 == 10^4 yr)
+steps: 1
+ic_preset: hello
+solver: multigrid
+grid_size: 256
+output_cadence: 0
+seed: 0
