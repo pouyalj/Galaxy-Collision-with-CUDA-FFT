@@ -53,8 +53,8 @@ def test_estimate_scales_linearly():
     assert b.particle_bytes == 2 * a.particle_bytes
 
 
-@pytest.mark.parametrize("bad", [-1])
-def test_estimate_rejects_negative(bad):
+@pytest.mark.parametrize("bad", [-1, 0])
+def test_estimate_rejects_nonpositive(bad):
     with pytest.raises(ValueError):
         estimate_memory(bad)
 
@@ -65,11 +65,12 @@ def test_estimate_rejects_bad_grid():
 
 
 # --- Taichi allocation (needs the runtime) --------------------------------------
-
-pytest.importorskip("taichi", reason="Taichi not installed")
+# importorskip is per-test (not module-level) so the pure-Python estimator tests
+# above always run, even without Taichi installed (see AGENT.md §11 RV1).
 
 
 def test_particle_and_grid_allocate_and_free():
+    pytest.importorskip("taichi", reason="Taichi not installed")
     import taichi as ti
 
     from galaxy_collision.data import GridState, ParticleState
@@ -95,6 +96,7 @@ def test_particle_and_grid_allocate_and_free():
 
 
 def test_allocate_100m_particles_scaled_to_ram():
+    pytest.importorskip("taichi", reason="Taichi not installed")
     import taichi as ti
 
     from galaxy_collision.data import ParticleState

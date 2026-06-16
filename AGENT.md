@@ -331,16 +331,19 @@ bug #13.)
 ### 5.2 Data model & memory budget
 
 - **Structure-of-Arrays (SoA)**, flat contiguous fields, never array-of-pointers:
-  `pos_x[N], pos_y[N], pos_z[N], vel_x[N], vel_y[N], vel_z[N], gid[N]` (+ optional `mass[N]`).
+  `pos_x[N], pos_y[N], pos_z[N], vel_x[N], vel_y[N], vel_z[N], mass[N], gid[N]`.
+  **As implemented in Stage 1, `mass[N]` is included** (a per-particle f32) so the central black
+  holes carry real mass (D9) — making the layout **32 B/particle**, not the 28 B of an early
+  mass-less sketch. (Drop `mass` for a uniform-mass run and it would be 28 B; see §11 RV2.)
 - Grid fields: `rho[256³]`, `phi[256³]`, plus multigrid hierarchy levels.
 
-**Memory at fp32 (production = multigrid, no FFT padding):**
+**Memory at fp32 (production = multigrid, no FFT padding; particles at 32 B):**
 
-| N particles | Particles (6×f32 + i32) | Grid (ρ, Φ, MG hierarchy) | Total (approx.) |
+| N particles | Particles (6×f32 + f32 mass + i32) | Grid (ρ, Φ, MG hierarchy) | Total (approx.) |
 |---|---|---|---|
-| 10M | ~0.28 GB | ~0.22 GB | **~0.5 GB** |
-| 30M | ~0.84 GB | ~0.22 GB | **~1.1 GB** |
-| 100M | ~2.8 GB | ~0.22 GB | **~3 GB** |
+| 10M | ~0.32 GB | ~0.22 GB | **~0.5 GB** |
+| 30M | ~0.96 GB | ~0.22 GB | **~1.2 GB** |
+| 100M | ~3.2 GB | ~0.22 GB | **~3.4 GB** |
 
 The **zero-padded FFT oracle** adds a 512³ complex buffer (~1.07 GB) — used only on NVIDIA for
 validation, so it never constrains the Apple/production path.
@@ -349,16 +352,16 @@ validation, so it never constrains the Apple/production path.
 M ≈ 2.32×10¹¹ M☉ within 25 kpc) divided by the per-particle mass sets N; the per-particle mass is
 the resolution knob, bounded by memory:
 
-| Per-particle mass | N (both galaxies) | Particle memory (28 B/particle) | Fits on |
+| Per-particle mass | N (both galaxies) | Particle memory (32 B/particle) | Fits on |
 |---|---|---|---|
-| 840 M☉ (paper, full resolution) | ~5.5×10⁸ | ~15.5 GB | 24 GB+ NVIDIA / ≥32 GB Apple unified |
-| ~4,640 M☉ | 100M | ~2.8 GB | ≥8–12 GB GPU |
-| ~15,500 M☉ | 30M | ~0.84 GB | most GPUs |
-| ~46,400 M☉ | 10M | ~0.28 GB | laptop / entry GPU |
+| 840 M☉ (paper, full resolution) | ~5.5×10⁸ | ~17.6 GB | 24 GB+ NVIDIA / ≥32 GB Apple unified |
+| ~4,640 M☉ | 100M | ~3.2 GB | ≥8–12 GB GPU |
+| ~15,500 M☉ | 30M | ~0.96 GB | most GPUs |
+| ~46,400 M☉ | 10M | ~0.32 GB | laptop / entry GPU |
 
-So full physical resolution (the paper's own 840 M☉ particle) is ~5.5×10⁸ particles — a stretch
-target needing a 24 GB+ card; the 10–100M working range is reached by coarsening the per-particle
-mass. (The paper assumed both galaxies have *equal* mass; real Andromeda is more massive, so using
+So full physical resolution (the paper's own 840 M☉ particle) is ~5.5×10⁸ particles (~17.6 GB) — a
+stretch target needing a 24 GB+ card; the 10–100M working range is reached by coarsening the
+per-particle mass. (The paper assumed both galaxies have *equal* mass; real Andromeda is more massive, so using
 true per-galaxy masses is a Stage-8 refinement.)
 
 ### 5.3 Backend strategy & precision policy
@@ -579,14 +582,14 @@ Items surfaced by the **Stage 0–1 code review (2026-06-16)**. None of these bl
 exit criteria — which are met (units/config tests pass, `ruff` clean, G independently verified, the
 scaffold + CI are sound). Each is a small fix or a doc-sync left for the owner to schedule.
 `Status: Pending` = not yet decided/applied. (These use `RV…` IDs to mark them as review findings,
-distinct from the `D…` decision record in §4.2.)
+distinct from the `D…` decision record in §4.2.) RV1–RV3 and RV4(a) were resolved 2026-06-16.
 
 | ID | Area | Finding | Suggested action | Status |
 |---|---|---|---|---|
-| RV1 | Test hygiene | `tests/test_data.py` puts `pytest.importorskip("taichi")` at **module level, below** its 5 pure-Python memory-estimator tests, so in any environment without Taichi the **whole file skips** (verified: "0 collected / 1 skipped"). Those tests have no Taichi dependency and they guard the §5.2 memory math. CI still runs them (Taichi is installed there), but a developer without Taichi gets a silent false "all pass." | Move the `importorskip` into the two Taichi-only test functions, or split into `test_data.py` (pure) + `test_data_taichi.py`. | Pending |
-| RV2 | Doc ↔ code drift | `data.py` uses **32 B/particle** because it adds a per-particle `mass` field (a sensible choice for the central black hole, D9), but §5.2 still states **28 B** (and "100M → 2.8 GB"). True footprint is ~3.2 GB at 100M. `test_data.py` already notes the 28→32 gap. | Decide: **(a)** keep the mass field and **update the §5.2 tables to 32 B** (100M → ~3.2 GB, still within targets) — *recommended*; or **(b)** drop per-particle mass for a uniform mass + a special-cased BH to reclaim 28 B. | Pending |
-| RV3 | Packaging / compat | `pyproject.toml` sets `requires-python = ">=3.11"`, but Taichi wheels lag the newest Python (no 3.13 wheels yet), so `pip install` can fail for a user on 3.13. CI pins 3.11, so CI is unaffected. | Cap to `>=3.11,<3.13` (or the current Taichi-supported max), or document "Python 3.11 / 3.12 recommended." | Pending |
-| RV4 | Nits | (a) `estimate_memory` accepts `n_particles == 0` while `ParticleState` requires `n > 0` — a minor inconsistency. (b) `_GRID_FIELDS = 2` is a Stage-1 placeholder; it must grow when the multigrid hierarchy (Stage 3) and the zero-padded FFT buffer (Stage 4) land — the docstring already flags this. | (a) Align the zero-handling between the two. (b) Revisit grid-memory accounting at Stage 3/4. | Pending (low) |
+| RV1 | Test hygiene | `tests/test_data.py` put `pytest.importorskip("taichi")` at **module level, below** its pure-Python memory-estimator tests, so in any environment without Taichi the **whole file skipped**. Those tests have no Taichi dependency and they guard the §5.2 memory math. | Move the `importorskip` into the two Taichi-only test functions. | ✅ **Done** (2026-06-16) — `importorskip` is now per-test; the estimator tests always run. |
+| RV2 | Doc ↔ code drift | `data.py` uses **32 B/particle** (it includes a per-particle `mass` field for the central black holes, D9), but §5.2 previously stated **28 B** / "100M → 2.8 GB". True footprint is ~3.2 GB at 100M. | Keep the mass field and update the §5.2 tables to 32 B (option **a**). | ✅ **Done** (2026-06-16) — §5.2 tables + prose now state 32 B (100M → ~3.2 GB; full-res → ~17.6 GB). |
+| RV3 | Packaging / compat | `pyproject.toml` set `requires-python = ">=3.11"`, but Taichi wheels lag the newest CPython (no 3.13 wheels yet), so `pip install` could fail on 3.13. | Cap to `>=3.11,<3.13`. | ✅ **Done** (2026-06-16) — cap applied in `pyproject.toml`. |
+| RV4 | Nits | (a) `estimate_memory` accepted `n_particles == 0` while `ParticleState`/`SimConfig` require positive — a minor inconsistency. (b) `_GRID_FIELDS = 2` is a Stage-1 placeholder; it must grow when the multigrid hierarchy (Stage 3) and the zero-padded FFT buffer (Stage 4) land — the docstring already flags this. | (a) Align the zero-handling. (b) Revisit grid-memory accounting at Stage 3/4. | (a) ✅ **Done** (2026-06-16) — `estimate_memory` now requires positive N. (b) ⬜ Pending (revisit at Stage 3/4). |
 
 *Verified good in the same review:* the (kpc, Myr, M☉) unit system and derived G (independently
 re-derived to 4.4985×10⁻¹²; circular-velocity sanity check 231.9 km/s for 10¹¹ M☉ at 8 kpc),

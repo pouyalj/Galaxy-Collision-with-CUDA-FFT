@@ -54,8 +54,9 @@ def estimate_memory(n_particles: int, grid_size: int = 256) -> MemoryEstimate:
     Does **not** include the multigrid hierarchy or the zero-padded FFT buffer —
     those are solver-specific and allocated in Stages 3–4.
     """
-    if n_particles < 0:
-        raise ValueError(f"n_particles must be non-negative, got {n_particles}")
+    # Positive-only, consistent with SimConfig and ParticleState (AGENT.md §11 RV4).
+    if n_particles <= 0:
+        raise ValueError(f"n_particles must be positive, got {n_particles}")
     if grid_size <= 0:
         raise ValueError(f"grid_size must be positive, got {grid_size}")
     particle_bytes = n_particles * BYTES_PER_PARTICLE

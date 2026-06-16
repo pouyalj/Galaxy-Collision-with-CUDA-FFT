@@ -7,7 +7,8 @@ name = "galaxy-collision"
 version = "0.0.0"
 description = "Cross-platform Particle-Mesh N-body simulation of a Milky Way x Andromeda galaxy collision (CPU / CUDA / Apple Metal via Taichi)."
 readme = "README.md"
-requires-python = ">=3.11"
+# Capped below 3.13: Taichi wheels lag the newest CPython (see AGENT.md §11 RV3).
+requires-python = ">=3.11,<3.13"
 license = { file = "LICENSE" }
 authors = [
     { name = "Pouya Lajevardi" },
