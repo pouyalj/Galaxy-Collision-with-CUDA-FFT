@@ -41,9 +41,10 @@
 - **State:** The original three near-duplicate CUDA C files (now archived under `legacy/`, see §3.1)
   compile against CUDA 9.2 + cuFFT + DISLIN on a specific 2020 lab machine. Several correctness and
   performance bugs (see §3.6) mean the headline configuration (M = 100,000,000 particles) will not
-  realistically run as written. **Modernization status:** Stages 0–1 are **done** — see §7. The
+  realistically run as written. **Modernization status:** Stages 0–2 are **done** — see §7. The
   repo root hosts the `galaxy_collision` Python package with a scaffold, a tested (kpc, Myr, M☉)
-  unit system, and the SoA particle/grid data model; Stage 2+ build the physics on top of it.
+  unit system, the SoA particle/grid data model, and a reproducible two-galaxy IC generator
+  (disk+bulge+central BH, 4v/2v); Stage 3 builds the correct CPU simulation on top of it.
 - **Goal (scoped):** Rebuild as **one portable source** (Taichi-style kernels compiling to
   CPU + CUDA + Metal), research-grade physics, **10–100M particles**, **Apple GPU as a
   first-class performance target**, with a **pluggable Poisson solver** (open-boundary multigrid
@@ -104,9 +105,10 @@ GalaxyCollision/
     │   ├── sim.py                      # orchestration + `hello-sim` CLI (Stage 0)
     │   ├── units.py                    # (kpc, Myr, M_sun) system + derived G (Stage 1)
     │   ├── data.py                     # SoA particle/grid fields + memory estimator (Stage 1)
+    │   ├── ic.py                       # two-galaxy initial conditions (Stage 2)
     │   ├── solver/                     # Poisson solvers — placeholder (Stage 3+)
     │   └── viz/                        # visualization — placeholder (Stage 7)
-    ├── tests/                          # test_config, test_hello_sim, test_units, test_data
+    ├── tests/                          # test_config, test_hello_sim, test_units, test_data, test_ic
     ├── docs/development.md             # contributor quickstart
     └── legacy/                         # original 2020 CUDA source, preserved for reference
         ├── README.md                   # build notes + bug pointers
@@ -287,6 +289,7 @@ nvcc final_draft1.cu -Xcompiler -fopenmp \
 | D13 | CI & lint | **GitHub Actions** (origin is GitHub): install → `ruff` lint → `pytest` → CPU `hello-sim` smoke run | Owner (2026-06-16) |
 | D14 | Config format | **YAML** run configs (`pyyaml`), validated by the `SimConfig` schema | Owner (2026-06-16) |
 | D15 | Unit system | **(kpc, Myr, M☉)**; single `G ≈ 4.498×10⁻¹² kpc³ M☉⁻¹ Myr⁻²` *derived* from the standard `4.30091×10⁻³ pc M☉⁻¹ (km/s)²` and unit-tested | Owner (2026-06-16); resolves §9 Q2. Aligns dt=0.01 Myr with the 2020 code's 10⁴ yr step |
+| D16 | Stage-2 IC modeling | **Hernquist bulge (~10% of stellar mass)** + Gaia-profile disk; **same SMBH ≈ 1×10⁸ M☉ in both galaxies**; **cold circular disk** (v_c from softened enclosed mass); disk profile *shape* from paper Eq. 1 **normalized to the mass-derived target** | Owner (2026-06-16). Bulge dispersion + thin-disk rotation are virial/spherical approximations to be validated at Stage 3; per-galaxy distinct masses & warm disk are Stage-8 refinements |
 
 ---
 
@@ -451,10 +454,10 @@ portable (the one thing a plain FFT is not under Taichi) and physically correct 
 
 ### 5.8 Proposed repo layout
 
-> **Stages 0–1 realized the scaffold + foundations of this layout** (see §3.1 for what exists on
-> disk today): `pyproject.toml`, `configs/`, `src/galaxy_collision/{config,sim,units,data}.py`,
+> **Stages 0–2 realized the scaffold + foundations of this layout** (see §3.1 for what exists on
+> disk today): `pyproject.toml`, `configs/`, `src/galaxy_collision/{config,sim,units,data,ic}.py`,
 > `solver/` + `viz/` placeholders, `tests/`, `docs/`, and `legacy/`. Modules below without a file
-> yet (`ic.py`, `deposit.py`, the solver/integrator/diagnostics/io modules) land in Stages 2–7.
+> yet (`deposit.py`, the solver/integrator/diagnostics/io modules) land in Stages 3–7.
 
 ```
 galaxy_collision/
@@ -508,14 +511,14 @@ The full, shareable version of this plan — with per-stage objectives, tasks, d
 criteria — is in **`Galaxy_Collision_Modernization_Plan.docx`** (a generated artifact, gitignored;
 this section is the tracked source of truth).
 
-> **Current status (2026-06-16):** Stages 0–1 ✅ done. Next: Stage 2 (initial conditions).
+> **Current status (2026-06-16):** Stages 0–2 ✅ done. Next: Stage 3 (CPU reference — the linchpin).
 
 | Stage | Outcome | Backend | Exit gate | Status |
 |---|---|---|---|---|
 | **0 — Scaffold & guardrails** | Repo, build, CI, config schema; legacy `.cu` archived | — | CI green; a trivial `hello-sim` runs | ✅ **Done** (2026-06-16) |
 | **1 — Units & data model** | Unit system (G) + SoA particle/grid fields | CPU | G unit test passes; config round-trips | ✅ **Done** (2026-06-16) |
-| **2 — Initial conditions** | Mass-derived N, disk+bulge sampling, central BH, 4v/2v setups | CPU | ICs match target mass/profile; reproducible from seed | ⬜ Next |
-| **3 — CPU reference (anchor)** | A *correct* sim: CIC + open-BC multigrid + KDK + softening + diagnostics + I/O | CPU | Plummer stays stable; two-body Kepler matches; energy drift < threshold | ⬜ |
+| **2 — Initial conditions** | Mass-derived N, disk+bulge sampling, central BH, 4v/2v setups | CPU | ICs match target mass/profile; reproducible from seed | ✅ **Done** (2026-06-16) |
+| **3 — CPU reference (anchor)** | A *correct* sim: CIC + open-BC multigrid + KDK + softening + diagnostics + I/O | CPU | Plummer stays stable; two-body Kepler matches; energy drift < threshold | ⬜ Next |
 | **4 — Validation & FFT oracle** | Zero-padded isolated FFT + full test suite + paper reproduction | CPU/CUDA | Multigrid ≈ FFT within tolerance; paper figures reproduced | ⬜ |
 | **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | ⬜ |
 | **6 — Apple / Metal** | First-class Apple GPU, fp32 compute policy | Metal | Cross-backend parity (test 6); perf benchmark vs CUDA | ⬜ |
