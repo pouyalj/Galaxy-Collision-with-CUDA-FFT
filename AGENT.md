@@ -573,7 +573,28 @@ Still open:
 
 ---
 
+## 11. Review log & deferred decisions
+
+Items surfaced by the **Stage 0–1 code review (2026-06-16)**. None of these block the Stage 0/1
+exit criteria — which are met (units/config tests pass, `ruff` clean, G independently verified, the
+scaffold + CI are sound). Each is a small fix or a doc-sync left for the owner to schedule.
+`Status: Pending` = not yet decided/applied. (These use `RV…` IDs to mark them as review findings,
+distinct from the `D…` decision record in §4.2.)
+
+| ID | Area | Finding | Suggested action | Status |
+|---|---|---|---|---|
+| RV1 | Test hygiene | `tests/test_data.py` puts `pytest.importorskip("taichi")` at **module level, below** its 5 pure-Python memory-estimator tests, so in any environment without Taichi the **whole file skips** (verified: "0 collected / 1 skipped"). Those tests have no Taichi dependency and they guard the §5.2 memory math. CI still runs them (Taichi is installed there), but a developer without Taichi gets a silent false "all pass." | Move the `importorskip` into the two Taichi-only test functions, or split into `test_data.py` (pure) + `test_data_taichi.py`. | Pending |
+| RV2 | Doc ↔ code drift | `data.py` uses **32 B/particle** because it adds a per-particle `mass` field (a sensible choice for the central black hole, D9), but §5.2 still states **28 B** (and "100M → 2.8 GB"). True footprint is ~3.2 GB at 100M. `test_data.py` already notes the 28→32 gap. | Decide: **(a)** keep the mass field and **update the §5.2 tables to 32 B** (100M → ~3.2 GB, still within targets) — *recommended*; or **(b)** drop per-particle mass for a uniform mass + a special-cased BH to reclaim 28 B. | Pending |
+| RV3 | Packaging / compat | `pyproject.toml` sets `requires-python = ">=3.11"`, but Taichi wheels lag the newest Python (no 3.13 wheels yet), so `pip install` can fail for a user on 3.13. CI pins 3.11, so CI is unaffected. | Cap to `>=3.11,<3.13` (or the current Taichi-supported max), or document "Python 3.11 / 3.12 recommended." | Pending |
+| RV4 | Nits | (a) `estimate_memory` accepts `n_particles == 0` while `ParticleState` requires `n > 0` — a minor inconsistency. (b) `_GRID_FIELDS = 2` is a Stage-1 placeholder; it must grow when the multigrid hierarchy (Stage 3) and the zero-padded FFT buffer (Stage 4) land — the docstring already flags this. | (a) Align the zero-handling between the two. (b) Revisit grid-memory accounting at Stage 3/4. | Pending (low) |
+
+*Verified good in the same review:* the (kpc, Myr, M☉) unit system and derived G (independently
+re-derived to 4.4985×10⁻¹²; circular-velocity sanity check 231.9 km/s for 10¹¹ M☉ at 8 kpc),
+config validation + YAML round-trip, `ruff` lint, and the overall scaffold/CI.
+
+---
+
 *Document status: architecture + staged plan, scoped with the owner on 2026-06-16 (decisions
-D1–D10). Companion deliverable: `Galaxy_Collision_Modernization_Plan.docx` (gitignored generated
-artifact; this file is the tracked source of truth). Update the Decision Record (§4.2) and Open
-Questions (§9) as choices are finalized during implementation.*
+D1–D15). Companion deliverable: `Galaxy_Collision_Modernization_Plan.docx` (gitignored generated
+artifact; this file is the tracked source of truth). Update the Decision Record (§4.2), Open
+Questions (§9), and the Review Log (§11) as choices are finalized during implementation.*

@@ -30,3 +30,20 @@ The original 2020 CUDA source is preserved under [`legacy/`](legacy/).
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
+
+## Things to revisit
+
+A code review of Stages 0–1 flagged a few small, non-urgent items. **Nothing here breaks the current
+build** — they're little improvements and decisions to make later. Full detail is in
+[`AGENT.md` §11](AGENT.md).
+
+- **Some tests are skipped when the GPU library (Taichi) isn't installed — including a few that don't
+  actually need it.** A handful of plain-math tests share a file with the GPU tests and get skipped
+  together, so they don't run on a machine without Taichi. Worth rearranging so they always run.
+- **Each particle now stores its own mass.** That's needed for the galaxies' central black holes, but
+  it makes a particle a bit bigger than the original plan assumed — so the memory note in the docs
+  should be bumped up to match (about 3.2 GB for 100M particles, not 2.8 GB).
+- **Use Python 3.11 or 3.12 for now.** The GPU library doesn't support the newest Python (3.13) yet,
+  so installing on 3.13 can fail.
+- **A couple of tiny cleanups.** Make the input checks consistent, and remember to update the memory
+  estimate when more grid data is added in later stages.
