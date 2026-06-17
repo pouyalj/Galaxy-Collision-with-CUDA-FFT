@@ -9,7 +9,7 @@ description = "Cross-platform Particle-Mesh N-body simulation of a Milky Way x A
 readme = "README.md"
 # Capped below 3.13: Taichi wheels lag the newest CPython (see AGENT.md §11 RV3).
 requires-python = ">=3.11,<3.13"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
 authors = [
     { name = "Pouya Lajevardi" },
 ]

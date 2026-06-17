@@ -30,7 +30,7 @@ The original 2020 CUDA source is preserved under [`legacy/`](legacy/).
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+Apache-2.0 — see [`LICENSE`](LICENSE).
 
 ## Things to revisit
 
