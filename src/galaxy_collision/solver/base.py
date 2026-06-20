@@ -31,8 +31,13 @@ class PoissonSolver(ABC):
     dx: float
 
     @abstractmethod
-    def solve(self, rho, phi) -> None:
-        """Read density field ``rho``, write potential field ``phi`` (both node-centered)."""
+    def solve(self, rho, phi, warm_start: bool = False) -> None:
+        """Read density field ``rho``, write potential field ``phi`` (both node-centered).
+
+        When ``warm_start`` is True, iterative solvers may use the current contents of
+        ``phi`` as the initial guess (cheap for a time loop where Φ changes little per
+        step). Direct solvers ignore it.
+        """
         raise NotImplementedError
 
 

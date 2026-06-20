@@ -19,8 +19,18 @@ _I32 = 4
 
 # Particle fields: pos(x,y,z) + vel(x,y,z) + mass, all f32; gid as i32.
 BYTES_PER_PARTICLE = 6 * _F32 + _F32 + _I32  # 32 B (28 B without mass; see AGENT.md §5.2)
-# Grid fields materialized in Stage 1: density (rho) and potential (phi), both f32.
-_GRID_FIELDS = 2
+
+# Grid fields for the production (multigrid) path, counted in units of G^3 f32 arrays
+# (AGENT.md §5.2, §11 RV4b — resolved at Stage 3):
+#   - rho + phi                          → 2
+#   - acceleration field g = −∇Φ (x,y,z) → 3
+#   - multigrid hierarchy (phi/rhs/res across levels) ≈ 3 × Σ_l 8^{−l} = 3 × 8/7 ≈ 3.43
+# The zero-padded FFT *oracle* adds a (2G)^3 complex pad (~8× a real G^3 grid) but is
+# NVIDIA-validation-only, so it is intentionally excluded from the production estimate.
+_GRID_RHO_PHI = 2
+_GRID_ACCEL = 3
+_GRID_MG_HIERARCHY = 3.0 * 8.0 / 7.0
+_GRID_FIELDS = _GRID_RHO_PHI + _GRID_ACCEL + _GRID_MG_HIERARCHY  # ≈ 8.43 G^3 f32 arrays
 
 
 @dataclass(frozen=True)
@@ -49,10 +59,12 @@ class MemoryEstimate:
 
 
 def estimate_memory(n_particles: int, grid_size: int = 256) -> MemoryEstimate:
-    """Estimate the SoA memory footprint (particles + rho/phi grids).
+    """Estimate the SoA memory footprint for the production (multigrid) path.
 
-    Does **not** include the multigrid hierarchy or the zero-padded FFT buffer —
-    those are solver-specific and allocated in Stages 3–4.
+    Counts particles plus the grid buffers actually allocated by a Stage-3 run on the
+    multigrid solver: rho, phi, the acceleration field, and the multigrid hierarchy
+    (see ``_GRID_FIELDS``). It does **not** include the zero-padded FFT *oracle* buffer,
+    which is NVIDIA-validation-only and allocated only when that solver is selected.
     """
     # Positive-only, consistent with SimConfig and ParticleState (AGENT.md §11 RV4).
     if n_particles <= 0:
@@ -60,7 +72,7 @@ def estimate_memory(n_particles: int, grid_size: int = 256) -> MemoryEstimate:
     if grid_size <= 0:
         raise ValueError(f"grid_size must be positive, got {grid_size}")
     particle_bytes = n_particles * BYTES_PER_PARTICLE
-    grid_bytes = _GRID_FIELDS * grid_size**3 * _F32
+    grid_bytes = int(_GRID_FIELDS * grid_size**3 * _F32)
     return MemoryEstimate(
         n_particles=n_particles,
         grid_size=grid_size,

@@ -269,6 +269,105 @@ def build_ic(
     )
 
 
+# --- Plummer sphere (equilibrium test IC, AGENT.md §6 test 3) -------------------
+
+
+@dataclass(frozen=True)
+class PlummerModel:
+    """An isolated Plummer sphere: ρ(r) = (3M/4πa³)(1 + r²/a²)^(−5/2)."""
+
+    total_mass: float = 1.0e10  # M_sun
+    scale_a: float = 5.0  # kpc (Plummer scale radius)
+    center: tuple[float, float, float] = (128.0, 128.0, 128.0)
+
+
+def _sample_plummer_q(rng, n: int) -> np.ndarray:
+    """Sample the dimensionless speed ratio q=v/v_esc from g(q)=q²(1−q²)^{7/2} by rejection.
+
+    g peaks at ≈0.092 (q²=2/9), so the constant 0.1 envelope (Aarseth–Hénon–Wielen 1974)
+    bounds it. Vectorized: oversample, keep accepted, repeat until n are filled.
+    """
+    out = np.empty(n, dtype=np.float64)
+    filled = 0
+    while filled < n:
+        m = n - filled
+        x = rng.random(m)
+        y = rng.random(m)
+        accept = 0.1 * y < x**2 * (1.0 - x**2) ** 3.5
+        k = int(np.count_nonzero(accept))
+        out[filled : filled + k] = x[accept]
+        filled += k
+    return out
+
+
+def _sample_plummer(rng, n: int, total_mass: float, scale_a: float, grav: float):
+    """Sample a Plummer sphere in equilibrium: positions + isotropic velocities (at origin)."""
+    # Positions: invert M(<r)/M = r³/(r²+a²)^{3/2} = u  →  r = a / √(u^{−2/3} − 1).
+    # Clamp u away from 0 so u^{−2/3} stays finite (u=0 would give r=0 anyway).
+    u = np.clip(rng.random(n), 1e-12, 1.0)
+    radius = scale_a / np.sqrt(u ** (-2.0 / 3.0) - 1.0)
+    radius = np.minimum(radius, 20.0 * scale_a)  # clip the rare far tail
+    pdir = rng.normal(size=(n, 3))
+    pdir /= np.linalg.norm(pdir, axis=1, keepdims=True)
+    pos = radius[:, None] * pdir
+
+    # Velocities: speed = q · v_esc(r), v_esc = √(2GM) (r²+a²)^{−1/4}; isotropic direction.
+    q = _sample_plummer_q(rng, n)
+    v_esc = np.sqrt(2.0 * grav * total_mass) * (radius**2 + scale_a**2) ** (-0.25)
+    vdir = rng.normal(size=(n, 3))
+    vdir /= np.linalg.norm(vdir, axis=1, keepdims=True)
+    vel = (q * v_esc)[:, None] * vdir
+
+    # Recenter: with finite N the sampled sphere carries a small net CM offset and bulk
+    # momentum. Subtract both so the sphere sits at the origin and is genuinely at rest —
+    # otherwise it drifts across the box and total momentum is a nonzero sampling artifact.
+    pos -= pos.mean(axis=0)
+    vel -= vel.mean(axis=0)
+    return pos, vel
+
+
+def build_plummer_ic(
+    config: SimConfig,
+    model: PlummerModel | None = None,
+    grav: float | None = None,
+) -> ICResult:
+    """Build an isolated Plummer-sphere IC (for the equilibrium-stability exit-gate test).
+
+    A single sphere of equal-mass particles at rest at the box center, sampled in virial
+    equilibrium with the analytic Plummer distribution function. The particle count is taken
+    from ``config.n_particles`` if set, else derived from ``config.particle_mass`` against
+    *this sphere's* ``total_mass`` (not the two-galaxy mass that ``resolve_n_particles``
+    assumes), else defaults to 10,000.
+    """
+    if config.ic_preset != "plummer":
+        raise NotImplementedError(
+            f"build_plummer_ic requires ic_preset='plummer', got {config.ic_preset!r}"
+        )
+    m = model or PlummerModel(center=(config.grid_size / 2.0,) * 3)
+    g = units.G if grav is None else grav
+    # Resolve N against the Plummer total mass — do NOT use config.resolve_n_particles(),
+    # which derives N from the two-galaxy GALAXY_MASS_MSUN and is wrong for one sphere.
+    if config.n_particles is not None:
+        n = config.n_particles
+    elif config.particle_mass is not None:
+        n = round(m.total_mass / config.particle_mass)
+    else:
+        n = 10_000
+
+    rng = np.random.default_rng(config.seed)
+    pos, vel = _sample_plummer(rng, n, m.total_mass, m.scale_a, g)
+    pos = pos + np.asarray(m.center)
+    particle_mass = m.total_mass / n
+    return ICResult(
+        pos=pos.astype(np.float32),
+        vel=vel.astype(np.float32),
+        mass=np.full(n, particle_mass, dtype=np.float32),
+        gid=np.zeros(n, dtype=np.int32),
+        preset="plummer",
+        particle_mass=particle_mass,
+    )
+
+
 def load_into_particle_state(ic: ICResult, parts) -> None:
     """Copy an :class:`ICResult` into an allocated Taichi ``ParticleState``."""
     if parts.n != ic.n:
@@ -287,6 +386,8 @@ __all__ = [
     "GalaxyModel",
     "ICResult",
     "build_ic",
+    "PlummerModel",
+    "build_plummer_ic",
     "load_into_particle_state",
     "V_APPROACH",
     "V_APPROACH_KMS",

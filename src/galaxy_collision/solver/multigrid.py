@@ -265,13 +265,18 @@ class MultigridPoissonSolver(PoissonSolver):
 
     # --- public API -------------------------------------------------------------
 
-    def solve(self, rho, phi) -> None:
+    def solve(self, rho, phi, warm_start: bool = False) -> None:
         rho_np = rho.to_numpy().astype(np.float64)
         total, (cx, cy, cz), (sxx, syy, szz, sxy, sxz, syz) = self._moments(rho_np)
 
-        # Finest RHS = 4πG ρ; cold interior start with multipole Dirichlet faces.
+        # Finest RHS = 4πG ρ. Initial interior guess: reuse `phi` from the previous step
+        # (warm start, fast in a time loop) or cold-start at 0. Faces are always (re)set
+        # from the current multipole moments, since the mass distribution has moved.
         _scale_into(rho, self.rhs[0], _FOUR_PI * self.G)
-        _zero(self.phi[0])
+        if warm_start:
+            _copy(phi, self.phi[0])
+        else:
+            _zero(self.phi[0])
         _set_dirichlet_faces(
             self.phi[0], self.grid_size, self.dx, self.G,
             total, cx, cy, cz, sxx, syy, szz, sxy, sxz, syz,

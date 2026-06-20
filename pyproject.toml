@@ -33,6 +33,7 @@ dev = [
 
 [project.scripts]
 hello-sim = "galaxy_collision.sim:hello_sim_cli"
+galaxy-sim = "galaxy_collision.sim:run_sim_cli"
 
 [project.urls]
 Homepage = "https://github.com/pouyalj/Galaxy-Collision-with-CUDA-FFT"

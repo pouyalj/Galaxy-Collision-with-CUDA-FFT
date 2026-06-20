@@ -62,7 +62,8 @@ class FFTPoissonSolver(PoissonSolver):
         green[0, 0, 0] = 0.0  # self term (see module docstring)
         return np.fft.rfftn(green)
 
-    def solve(self, rho, phi) -> None:
+    def solve(self, rho, phi, warm_start: bool = False) -> None:
+        # warm_start is ignored: this is a direct (non-iterative) spectral solve.
         n, m = self.grid_size, self.pad
         rho_np = rho.to_numpy().astype(np.float64)
         padded = np.zeros((m, m, m), dtype=np.float64)

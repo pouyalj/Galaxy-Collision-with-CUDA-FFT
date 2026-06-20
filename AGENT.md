@@ -41,10 +41,15 @@
 - **State:** The original three near-duplicate CUDA C files (now archived under `legacy/`, see §3.1)
   compile against CUDA 9.2 + cuFFT + DISLIN on a specific 2020 lab machine. Several correctness and
   performance bugs (see §3.6) mean the headline configuration (M = 100,000,000 particles) will not
-  realistically run as written. **Modernization status:** Stages 0–2 are **done** — see §7. The
+  realistically run as written. **Modernization status:** Stages 0–3 are **done** — see §7. The
   repo root hosts the `galaxy_collision` Python package with a scaffold, a tested (kpc, Myr, M☉)
-  unit system, the SoA particle/grid data model, and a reproducible two-galaxy IC generator
-  (disk+bulge+central BH, 4v/2v); Stage 3 builds the correct CPU simulation on top of it.
+  unit system, the SoA particle/grid data model, a reproducible two-galaxy IC generator
+  (disk+bulge+central BH, 4v/2v), and — as of Stage 3 — a **correct CPU simulation**: CIC
+  deposit/gather, both Poisson solvers (open-BC multigrid + the zero-padded FFT oracle, pulled
+  forward from Stage 4), KDK leapfrog (grid-softened PM forces; explicit Plummer softening on the
+  direct/diagnostic path), fp64 conservation diagnostics, and
+  HDF5/npz snapshot I/O. It is validated by a stable Plummer sphere, a two-body Kepler orbit, and
+  multigrid-vs-oracle agreement.
 - **Goal (scoped):** Rebuild as **one portable source** (Taichi-style kernels compiling to
   CPU + CUDA + Metal), research-grade physics, **10–100M particles**, **Apple GPU as a
   first-class performance target**, with a **pluggable Poisson solver** (open-boundary multigrid
@@ -94,7 +99,7 @@ is archived under `legacy/`:
 ```
 GalaxyCollision/
 └── Galaxy-Collision-with-CUDA-FFT/     # the actual git repo (origin: github.com/pouyalj/...)
-    ├── README.md  ·  AGENT.md  ·  LICENSE (MIT)
+    ├── README.md  ·  AGENT.md  ·  LICENSE (Apache-2.0)
     ├── pyproject.toml                  # package + deps (taichi, numpy, h5py, matplotlib, pyyaml)
     ├── .github/workflows/ci.yml        # CI: ruff + pytest + CPU hello-sim smoke run
     ├── configs/
@@ -102,13 +107,17 @@ GalaxyCollision/
     ├── src/galaxy_collision/
     │   ├── __init__.py
     │   ├── config.py                   # SimConfig schema + YAML load/dump (Stage 0)
-    │   ├── sim.py                      # orchestration + `hello-sim` CLI (Stage 0)
+    │   ├── sim.py                      # orchestration + hello-sim/galaxy-sim CLIs (Stage 0/3)
     │   ├── units.py                    # (kpc, Myr, M_sun) system + derived G (Stage 1)
     │   ├── data.py                     # SoA particle/grid fields + memory estimator (Stage 1)
-    │   ├── ic.py                       # two-galaxy initial conditions (Stage 2)
-    │   ├── solver/                     # Poisson solvers — placeholder (Stage 3+)
+    │   ├── ic.py                       # two-galaxy + Plummer initial conditions (Stage 2/3)
+    │   ├── deposit.py                  # CIC deposit + grad (−∇Φ) + force gather (Stage 3)
+    │   ├── integrator.py              # KDK leapfrog + direct Plummer-softened force (Stage 3)
+    │   ├── diagnostics.py              # energy/momentum/Lagrangian-radius, fp64 (Stage 3)
+    │   ├── io.py                       # HDF5/npz snapshot I/O (Stage 3)
+    │   ├── solver/                     # base + multigrid (open-BC) + fft_oracle (Stage 3)
     │   └── viz/                        # visualization — placeholder (Stage 7)
-    ├── tests/                          # test_config, test_hello_sim, test_units, test_data, test_ic
+    ├── tests/                          # config/hello_sim/units/data/ic/deposit/solver_*/integrator/io/sim
     ├── docs/development.md             # contributor quickstart
     └── legacy/                         # original 2020 CUDA source, preserved for reference
         ├── README.md                   # build notes + bug pointers
@@ -284,7 +293,7 @@ nvcc final_draft1.cu -Xcompiler -fopenmp \
 | D8 | Particle count | **Derive N from physical galaxy mass**: N = M_galaxy / m_particle. Particle mass is the resolution knob, bounded by memory. Full-res (840 M☉/particle) ≈ 5.5×10⁸ total; coarsen to land in the 10–100M working range (§5.2). | Owner |
 | D9 | Central black holes | **In scope** — one massive, softened particle per galaxy that carries real grid mass. | Owner |
 | D10 | Dark matter | **Deferred** — not part of the 2020 project; keep a hook, revisit later. | Owner |
-| D11 | Repo placement | **In-place on `master`** — modernized package at repo root, legacy `.cu` moved to `legacy/`, MIT + git history kept | Owner (2026-06-16); single source of truth, preserves history |
+| D11 | Repo placement | **In-place on `master`** — modernized package at repo root, legacy `.cu` moved to `legacy/`, Apache-2.0 + git history kept | Owner (2026-06-16); single source of truth, preserves history (relicensed GPL-3.0 → Apache-2.0 in 0bbd01e) |
 | D12 | Language / runtime | **Python ≥ 3.11** + Taichi kernels; `hatchling` build, `src/` layout | Owner (2026-06-16) |
 | D13 | CI & lint | **GitHub Actions** (origin is GitHub): install → `ruff` lint → `pytest` → CPU `hello-sim` smoke run | Owner (2026-06-16) |
 | D14 | Config format | **YAML** run configs (`pyyaml`), validated by the `SimConfig` schema | Owner (2026-06-16) |
@@ -338,15 +347,17 @@ bug #13.)
   **As implemented in Stage 1, `mass[N]` is included** (a per-particle f32) so the central black
   holes carry real mass (D9) — making the layout **32 B/particle**, not the 28 B of an early
   mass-less sketch. (Drop `mass` for a uniform-mass run and it would be 28 B; see §11 RV2.)
-- Grid fields: `rho[256³]`, `phi[256³]`, plus multigrid hierarchy levels.
+- Grid fields: `rho[256³]`, `phi[256³]`, the acceleration field `g=−∇Φ` (3×256³), plus the
+  multigrid hierarchy (phi/rhs/res across levels). As implemented in Stage 3 this is
+  **≈ 8.43 × 256³ f32 ≈ 0.57 GB** (see `data.py` `_GRID_FIELDS`; §11 RV4b).
 
 **Memory at fp32 (production = multigrid, no FFT padding; particles at 32 B):**
 
-| N particles | Particles (6×f32 + f32 mass + i32) | Grid (ρ, Φ, MG hierarchy) | Total (approx.) |
+| N particles | Particles (6×f32 + f32 mass + i32) | Grid (ρ, Φ, g, MG hierarchy) | Total (approx.) |
 |---|---|---|---|
-| 10M | ~0.32 GB | ~0.22 GB | **~0.5 GB** |
-| 30M | ~0.96 GB | ~0.22 GB | **~1.2 GB** |
-| 100M | ~3.2 GB | ~0.22 GB | **~3.4 GB** |
+| 10M | ~0.32 GB | ~0.57 GB | **~0.9 GB** |
+| 30M | ~0.96 GB | ~0.57 GB | **~1.5 GB** |
+| 100M | ~3.2 GB | ~0.57 GB | **~3.8 GB** |
 
 The **zero-padded FFT oracle** adds a 512³ complex buffer (~1.07 GB) — used only on NVIDIA for
 validation, so it never constrains the Apple/production path.
@@ -416,8 +427,12 @@ portable (the one thing a plain FFT is not under Taichi) and physically correct 
   interpolation. Fixes the "square galaxy" artifact and conserves momentum (symmetric weights).
 - **Integrator:** **kick-drift-kick (KDK) leapfrog**, symplectic, second-order; this is what the
   paper intended. Global fixed `dt` to start; adaptive dt is a later option.
-- **Softening:** Plummer-softened forces with softening length ε ~ a fraction of the cell size, to
-  control two-body/grid artifacts.
+- **Softening:** the PM force is **grid-softened** at the cell scale by CIC + the finite grid (no
+  explicit ε on the deposit→solve→grad→gather path). Explicit **Plummer softening** (ε) is used only
+  by the *direct* O(N²) force (Kepler test, central BHs) and by the IC circular-velocity setup
+  (`GalaxyModel.softening = 0.3 kpc`). *Stage-3 status:* reconciling that 0.3 kpc IC ε with the ~1 kpc
+  effective grid softening (so disk ICs are launched on the same potential the grid feels) is a
+  Stage-4 refinement.
 - **Initial conditions (research-grade):** derive the particle count from physical mass —
   N = M_galaxy / m_particle (§5.2) — then sample the Gaia-derived surface density (paper Eq. 1) for a
   disk + bulge, set circular velocities from the enclosed-mass rotation curve, add a vertical scale
@@ -454,15 +469,15 @@ portable (the one thing a plain FFT is not under Taichi) and physically correct 
 
 ### 5.8 Proposed repo layout
 
-> **Stages 0–2 realized the scaffold + foundations of this layout** (see §3.1 for what exists on
-> disk today): `pyproject.toml`, `configs/`, `src/galaxy_collision/{config,sim,units,data,ic}.py`,
-> `solver/` + `viz/` placeholders, `tests/`, `docs/`, and `legacy/`. Modules below without a file
-> yet (`deposit.py`, the solver/integrator/diagnostics/io modules) land in Stages 3–7.
+> **Stages 0–3 realized this layout** (see §3.1 for what exists on disk today): `pyproject.toml`,
+> `configs/`, `src/galaxy_collision/{config,sim,units,data,ic,deposit,integrator,diagnostics,io}.py`,
+> the `solver/` package (`base` + `multigrid` + `fft_oracle`), `tests/`, `docs/`, and `legacy/`.
+> The only remaining placeholder is `viz/` (Stage 7).
 
 ```
 galaxy_collision/
 ├── pyproject.toml                  # deps: taichi, numpy, h5py, matplotlib, (cupy optional)
-├── README.md  ·  AGENT.md  ·  LICENSE (keep MIT)
+├── README.md  ·  AGENT.md  ·  LICENSE (Apache-2.0)
 ├── configs/                        # YAML/TOML run configs (N, dt, ICs, solver, backend)
 ├── src/galaxy_collision/
 │   ├── units.py                    # unit system + G, with tests
@@ -503,6 +518,13 @@ Correctness is the gate for "research-grade." Tests, roughly in order of authori
 For high-stakes correctness checks, run the comparison as an isolated verification pass (e.g. a
 dedicated test job / subagent) rather than eyeballing plots.
 
+**On "energy drift < threshold" (test 5):** the PM energy ½ΣρΦ·dV is a *PM-tolerance* metric, not
+the exact integrated Hamiltonian, so it carries a dt-independent grid-discretization floor (the
+trajectory is still symplectic — the Kepler test proves that on the direct path, where energy and
+force share one Hamiltonian). **Stage-3 observed/threshold values** (over 5–7 dynamical times of a
+dense Plummer sphere): FFT-oracle solver ≈ 5×10⁻³ drift (gate < 1%); multigrid (warm-started, finite
+cycles) ≈ 1×10⁻² (gate < 3%). These bounds are encoded as named constants in `tests/test_sim.py`.
+
 ---
 
 ## 7. Staged implementation plan
@@ -511,15 +533,17 @@ The full, shareable version of this plan — with per-stage objectives, tasks, d
 criteria — is in **`Galaxy_Collision_Modernization_Plan.docx`** (a generated artifact, gitignored;
 this section is the tracked source of truth).
 
-> **Current status (2026-06-16):** Stages 0–2 ✅ done. Next: Stage 3 (CPU reference — the linchpin).
+> **Current status (2026-06-20):** Stages 0–3 ✅ done. The FFT oracle was pulled forward into
+> Stage 3 (so multigrid is validated against it now). Next: Stage 4 (paper reproduction + the
+> remaining validation campaign on top of the existing oracle/multigrid cross-check).
 
 | Stage | Outcome | Backend | Exit gate | Status |
 |---|---|---|---|---|
 | **0 — Scaffold & guardrails** | Repo, build, CI, config schema; legacy `.cu` archived | — | CI green; a trivial `hello-sim` runs | ✅ **Done** (2026-06-16) |
 | **1 — Units & data model** | Unit system (G) + SoA particle/grid fields | CPU | G unit test passes; config round-trips | ✅ **Done** (2026-06-16) |
 | **2 — Initial conditions** | Mass-derived N, disk+bulge sampling, central BH, 4v/2v setups | CPU | ICs match target mass/profile; reproducible from seed | ✅ **Done** (2026-06-16) |
-| **3 — CPU reference (anchor)** | A *correct* sim: CIC + open-BC multigrid + KDK + softening + diagnostics + I/O | CPU | Plummer stays stable; two-body Kepler matches; energy drift < threshold | ⬜ Next |
-| **4 — Validation & FFT oracle** | Zero-padded isolated FFT + full test suite + paper reproduction | CPU/CUDA | Multigrid ≈ FFT within tolerance; paper figures reproduced | ⬜ |
+| **3 — CPU reference (anchor)** | A *correct* sim: CIC + open-BC multigrid + KDK + softening + diagnostics + I/O | CPU | Plummer stays stable; two-body Kepler matches; energy drift < threshold | ✅ **Done** (2026-06-20) |
+| **4 — Validation & FFT oracle** | Zero-padded isolated FFT (✅ done in Stage 3) + full test suite + paper reproduction | CPU/CUDA | Multigrid ≈ FFT within tolerance (✅ test 2 passing); paper figures reproduced (⬜) | 🟡 partial |
 | **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | ⬜ |
 | **6 — Apple / Metal** | First-class Apple GPU, fp32 compute policy | Metal | Cross-backend parity (test 6); perf benchmark vs CUDA | ⬜ |
 | **7 — Visualization & output** | Realtime GGUI, batch→movie, paper figures, tracer particle | all | All four output modes working | ⬜ |
@@ -592,7 +616,16 @@ distinct from the `D…` decision record in §4.2.) RV1–RV3 and RV4(a) were re
 | RV1 | Test hygiene | `tests/test_data.py` put `pytest.importorskip("taichi")` at **module level, below** its pure-Python memory-estimator tests, so in any environment without Taichi the **whole file skipped**. Those tests have no Taichi dependency and they guard the §5.2 memory math. | Move the `importorskip` into the two Taichi-only test functions. | ✅ **Done** (2026-06-16) — `importorskip` is now per-test; the estimator tests always run. |
 | RV2 | Doc ↔ code drift | `data.py` uses **32 B/particle** (it includes a per-particle `mass` field for the central black holes, D9), but §5.2 previously stated **28 B** / "100M → 2.8 GB". True footprint is ~3.2 GB at 100M. | Keep the mass field and update the §5.2 tables to 32 B (option **a**). | ✅ **Done** (2026-06-16) — §5.2 tables + prose now state 32 B (100M → ~3.2 GB; full-res → ~17.6 GB). |
 | RV3 | Packaging / compat | `pyproject.toml` set `requires-python = ">=3.11"`, but Taichi wheels lag the newest CPython (no 3.13 wheels yet), so `pip install` could fail on 3.13. | Cap to `>=3.11,<3.13`. | ✅ **Done** (2026-06-16) — cap applied in `pyproject.toml`. |
-| RV4 | Nits | (a) `estimate_memory` accepted `n_particles == 0` while `ParticleState`/`SimConfig` require positive — a minor inconsistency. (b) `_GRID_FIELDS = 2` is a Stage-1 placeholder; it must grow when the multigrid hierarchy (Stage 3) and the zero-padded FFT buffer (Stage 4) land — the docstring already flags this. | (a) Align the zero-handling. (b) Revisit grid-memory accounting at Stage 3/4. | (a) ✅ **Done** (2026-06-16) — `estimate_memory` now requires positive N. (b) ⬜ Pending (revisit at Stage 3/4). |
+| RV4 | Nits | (a) `estimate_memory` accepted `n_particles == 0` while `ParticleState`/`SimConfig` require positive — a minor inconsistency. (b) `_GRID_FIELDS = 2` is a Stage-1 placeholder; it must grow when the multigrid hierarchy (Stage 3) and the zero-padded FFT buffer (Stage 4) land — the docstring already flags this. | (a) Align the zero-handling. (b) Revisit grid-memory accounting at Stage 3/4. | (a) ✅ **Done** (2026-06-16). (b) ✅ **Done** (2026-06-20) — `_GRID_FIELDS` now counts ρ+Φ (2) + accel (3) + MG hierarchy (≈3.43) ≈ 8.43 G³; §5.2 grid column updated to ~0.57 GB. FFT-oracle pad stays excluded (validation-only). |
+
+Items surfaced by the **Stage 3 adversarial verification (2026-06-20)** — deferred, non-blocking
+(the Stage-3 exit criteria are met: Plummer stable, two-body Kepler matches, energy drift small,
+multigrid ≈ FFT oracle):
+
+| ID | Area | Finding | Suggested action | Status |
+|---|---|---|---|---|
+| RV5 | Perf (Stage 5) | The open-BC multigrid converges at a healthy but non-optimal ~0.5–0.7/cycle (measured on small/64³ blobs). The power-of-two vertex-centered coarsening puts the coarse far-face a half-cell inside the fine one, which slows (does not break) convergence; correctness comes from the fine-grid operator + multipole BCs, so the converged Φ is right regardless. | Tune at Stage 5 (e.g. proper 2^L+1 nesting or W-cycles/Galerkin coarsening); fine for a CPU reference. | ⬜ Deferred to Stage 5 |
+| RV6 | Perf (Stage 5) | Device-residency gaps for the CPU reference: (a) the multigrid boundary multipole moments (M, CM, quadrupole) are computed host-side in NumPy each solve (a host↔device hop); (b) diagnostics pull full fields to host via `to_numpy()` each sample; (c) grid state is split across owners — `GridState` holds only ρ/Φ, the acceleration grids are allocated ad-hoc in `run_simulation`, and the MG hierarchy lives inside the solver. Clear and correct for the reference, but legacy bug #13 territory. | Move the moment reduction into a Taichi kernel; keep diagnostics device-side (Kahan fp32 on Metal); consolidate grid ownership when chasing device-resident performance. | ⬜ Deferred to Stage 5 |
 
 *Verified good in the same review:* the (kpc, Myr, M☉) unit system and derived G (independently
 re-derived to 4.4985×10⁻¹²; circular-velocity sanity check 231.9 km/s for 10¹¹ M☉ at 8 kpc),

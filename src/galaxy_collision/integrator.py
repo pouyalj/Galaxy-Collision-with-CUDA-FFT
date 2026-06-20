@@ -1,4 +1,4 @@
-"""Kick-drift-kick (KDK) leapfrog integrator + Plummer-softened forces (Stage 3).
+"""Kick-drift-kick (KDK) leapfrog integrator + a direct Plummer-softened force (Stage 3).
 
 AGENT.md §5.5: a symplectic, second-order **KDK leapfrog** is the integrator the paper
 intended (the legacy ``center_diff`` was a scrambled, dimensionally-inconsistent mess —
@@ -6,11 +6,12 @@ bug #1). One full step at fixed ``dt``:
 
     kick(½dt) → drift(dt) → [recompute acceleration] → kick(½dt)
 
-The acceleration between the kicks is recomputed by the PM force chain (deposit → solve
-→ ``potential_to_accel`` → gather; see ``deposit.py`` and ``solver/``). For validating
-the *integrator itself* — independent of the grid — this module also provides a direct
-**Plummer-softened** pairwise force (O(N²), for tiny systems like the two-body Kepler
-test and the softened central black holes):
+In the production run the acceleration is recomputed by the PM force chain (deposit →
+solve → ``potential_to_accel`` → gather; see ``deposit.py`` and ``solver/``). **That path
+carries no explicit softening — its forces are *grid-softened* at the cell scale** by CIC
+deposition + the finite grid. The explicit **Plummer-softened** kernel below is the
+*direct* O(N²) force, used only for tiny systems (the two-body Kepler test, the softened
+central black holes) and for validating the integrator independent of the grid:
 
     a_i = G Σ_{j≠i} m_j (x_j − x_i) / (|x_i − x_j|² + ε²)^{3/2}
 

@@ -10,20 +10,24 @@ now being rebuilt as **one portable source** that runs on CPU, NVIDIA CUDA, and
 Apple-Silicon GPU via [Taichi](https://www.taichi-lang.org/), with research-grade
 physics at 10–100M particles.
 
-> **Status: Stages 0–2 done.** Scaffold, config loader, CI, and a trivial
-> `hello-sim` are in place, plus a tested (kpc, Myr, M☉) unit system, the SoA
-> particle/grid data model, and a reproducible two-galaxy initial-condition
-> generator (disk + bulge + central black hole, 4v/2v approach). Next is Stage 3
-> (the correct CPU simulation). See [`AGENT.md`](AGENT.md) for the full architecture
-> and staged plan, and [`docs/development.md`](docs/development.md) to get started.
+> **Status: Stages 0–3 done.** On top of the scaffold, config loader, CI, units, SoA
+> data model, and two-galaxy/Plummer initial conditions, there is now a **correct CPU
+> simulation**: CIC deposit/gather, both Poisson solvers (open-boundary multigrid plus a
+> zero-padded FFT oracle), a KDK leapfrog with Plummer softening, fp64 conservation
+> diagnostics, and HDF5/npz snapshots — driven by `galaxy-sim`. It is validated by a
+> stable Plummer sphere, a two-body Kepler orbit, and multigrid-vs-oracle agreement.
+> Next is Stage 4 (paper reproduction + the broader validation campaign). See
+> [`AGENT.md`](AGENT.md) for the full architecture and staged plan, and
+> [`docs/development.md`](docs/development.md) to get started.
 
 ## Quickstart
 
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-hello-sim          # runs the no-op smoke simulation on CPU
-pytest             # run the test suite
+hello-sim                                  # no-op smoke simulation on CPU
+galaxy-sim --config configs/plummer.yaml   # real PM N-body run (a Plummer sphere)
+pytest                                     # run the test suite
 ```
 
 The original 2020 CUDA source is preserved under [`legacy/`](legacy/).
@@ -46,7 +50,13 @@ Resolved (2026-06-16):
   enforced by the package metadata.
 - ✅ Input checks are consistent (counts must be positive everywhere).
 
-Still open:
+Resolved (2026-06-20, Stage 3):
 
-- **Grid-memory accounting will need updating in later stages** as the Poisson solver adds its own
-  grid buffers (the multigrid hierarchy in Stage 3, the FFT buffer in Stage 4).
+- ✅ **Grid-memory accounting updated** for the real solver buffers: the estimate now counts ρ, Φ,
+  the acceleration field, and the multigrid hierarchy (~0.57 GB at 256³), not just ρ/Φ.
+
+Still open (deferred to Stage 5, performance):
+
+- The open-boundary multigrid is *correct* but not yet *fast* (~0.5–0.7 convergence/cycle) — to be
+  tuned when chasing GPU performance. The boundary-condition moments are also computed on the host
+  for now; moving them onto the device is part of the same Stage-5 performance work.

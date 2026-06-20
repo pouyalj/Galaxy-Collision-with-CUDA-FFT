@@ -14,9 +14,16 @@ angular momentum as supporting checks. **Conservation expectations differ by for
 
 So the strict ΔL≈0 check the two-body Kepler test passes uses the direct central-force
 path. Validating that the production **PM force chain** (deposit→solve→grad→gather)
-conserves energy/momentum to PM tolerance is a separate, looser check — the Stage-E exit
-gate (a stable Plummer sphere with bounded energy drift), not something Checkpoint C's
-direct-path tests cover.
+conserves energy/momentum to PM tolerance is a separate, looser check — the **Stage-3 exit
+gate** (Checkpoint E: a stable Plummer sphere with bounded energy drift), not something the
+direct-path Kepler/Plummer-IC tests cover.
+
+**On the PM energy metric (important):** ``potential_energy_grid`` = ½ΣρΦ·dV is the
+standard PM energy, but it is *not* the exact discrete Hamiltonian whose gradient (CIC
+gather of −∇Φ) generates the integrated force. So PM ``energy_drift`` has an irreducible
+grid-discretization floor that does *not* shrink with ``dt`` — it is a PM-tolerance check,
+not a proof of symplectic conservation. (The trajectory *is* symplectic; the Kepler test
+proves that on the direct path, where energy and force share one Hamiltonian.)
 
 Per the precision policy (D6) diagnostics are computed in **fp64** — here on the host in
 NumPy, fed by ``field.to_numpy()`` at the output cadence. They are not in the per-step hot
@@ -27,7 +34,7 @@ Two flavors of potential energy:
 - :func:`potential_energy_direct` — exact softened pair sum −½G Σ_{i≠j} mᵢmⱼ/√(r²+ε²),
   O(N²). Used to validate the integrator on small systems (e.g. two-body Kepler).
 - :func:`potential_energy_grid` — the PM estimate ½ Σ ρΦ·dV from the solved grid, O(grid).
-  This is what a production run tracks.
+  This is what a production run tracks (a PM-tolerance metric; see the note above).
 
 All position/velocity arrays are ``(N, 3)``; mass is ``(N,)``. Inputs are cast to fp64.
 """
@@ -64,6 +71,32 @@ def angular_momentum(
     return (mass[:, None] * np.cross(r, vel)).sum(axis=0)
 
 
+def center_of_mass(mass: np.ndarray, pos: np.ndarray) -> np.ndarray:
+    """Mass-weighted mean position, as a length-3 fp64 vector."""
+    mass = np.asarray(mass, dtype=np.float64)
+    pos = np.asarray(pos, dtype=np.float64)
+    return (mass[:, None] * pos).sum(axis=0) / mass.sum()
+
+
+def lagrangian_radius(
+    mass: np.ndarray, pos: np.ndarray, fraction: float = 0.5, center: np.ndarray | None = None
+) -> float:
+    """Radius enclosing ``fraction`` of the total mass about ``center`` (default: the CM).
+
+    The half-mass radius (fraction=0.5) is the headline structural diagnostic for the
+    Plummer-stability test: a sphere that collapses or evaporates moves it.
+    """
+    mass = np.asarray(mass, dtype=np.float64)
+    pos = np.asarray(pos, dtype=np.float64)
+    c = center_of_mass(mass, pos) if center is None else np.asarray(center, dtype=np.float64)
+    r = np.linalg.norm(pos - c, axis=1)
+    order = np.argsort(r)
+    cum = np.cumsum(mass[order])
+    target = fraction * mass.sum()
+    idx = int(np.searchsorted(cum, target))
+    return float(r[order][min(idx, len(r) - 1)])
+
+
 def potential_energy_direct(
     mass: np.ndarray, pos: np.ndarray, softening: float = 0.0, grav: float | None = None
 ) -> float:
@@ -80,7 +113,11 @@ def potential_energy_direct(
 
 
 def potential_energy_grid(rho: np.ndarray, phi: np.ndarray, dx: float = 1.0) -> float:
-    """PM potential energy estimate ½ Σ ρΦ·dV from the solved grid."""
+    """PM potential energy estimate ½ Σ ρΦ·dV from the solved grid.
+
+    A PM-tolerance metric, not the exact integrated Hamiltonian — see the module docstring:
+    energy drift built on it has a dt-independent grid-discretization floor.
+    """
     rho = np.asarray(rho, dtype=np.float64)
     phi = np.asarray(phi, dtype=np.float64)
     # dx**3 is the cell volume of the ½∫ρΦ integral. It is unrelated to (not a
@@ -104,6 +141,8 @@ __all__ = [
     "kinetic_energy",
     "linear_momentum",
     "angular_momentum",
+    "center_of_mass",
+    "lagrangian_radius",
     "potential_energy_direct",
     "potential_energy_grid",
     "total_energy_direct",

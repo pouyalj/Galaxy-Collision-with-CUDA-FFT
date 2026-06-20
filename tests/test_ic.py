@@ -167,6 +167,56 @@ def test_unimplemented_presets_raise(preset):
 # --- Taichi integration ---------------------------------------------------------
 
 
+def test_plummer_ic_mass_and_count():
+    from galaxy_collision.ic import PlummerModel, build_plummer_ic
+
+    cfg = SimConfig(ic_preset="plummer", grid_size=64, n_particles=8000, seed=1)
+    model = PlummerModel(total_mass=1.0e10, scale_a=5.0, center=(32.0, 32.0, 32.0))
+    ic = build_plummer_ic(cfg, model=model)
+    assert ic.n == 8000
+    assert ic.preset == "plummer"
+    assert ic.mass.sum() == pytest.approx(1.0e10, rel=1e-5)
+    assert ic.particle_mass == pytest.approx(1.0e10 / 8000)
+    assert set(np.unique(ic.gid)) == {0}  # single galaxy
+
+
+def test_plummer_ic_half_mass_radius():
+    """Sampled half-mass radius matches the Plummer value r_½ ≈ 1.305 a."""
+    from galaxy_collision import diagnostics
+    from galaxy_collision.ic import PlummerModel, build_plummer_ic
+
+    cfg = SimConfig(ic_preset="plummer", grid_size=128, n_particles=40_000, seed=2)
+    a = 5.0
+    model = PlummerModel(total_mass=1.0e10, scale_a=a, center=(64.0, 64.0, 64.0))
+    ic = build_plummer_ic(cfg, model=model)
+    r_half = diagnostics.lagrangian_radius(ic.mass, ic.pos, 0.5, center=np.array(model.center))
+    assert r_half == pytest.approx(1.305 * a, rel=0.05)
+
+
+def test_plummer_ic_is_virialized():
+    """Sampled velocities satisfy the virial theorem 2T + W ≈ 0 (T/|W| ≈ ½)."""
+    from galaxy_collision import diagnostics
+    from galaxy_collision.ic import PlummerModel, build_plummer_ic
+
+    cfg = SimConfig(ic_preset="plummer", grid_size=64, n_particles=3000, seed=5)
+    model = PlummerModel(total_mass=1.0e10, scale_a=5.0, center=(32.0, 32.0, 32.0))
+    ic = build_plummer_ic(cfg, model=model)
+    t = diagnostics.kinetic_energy(ic.mass, ic.vel)
+    # Direct softened PE with a tiny softening (≪ a) ≈ the analytic Plummer self-energy.
+    w = diagnostics.potential_energy_direct(ic.mass, ic.pos, softening=0.05)
+    assert t / abs(w) == pytest.approx(0.5, abs=0.08)
+
+
+def test_plummer_ic_reproducible():
+    from galaxy_collision.ic import build_plummer_ic
+
+    cfg = SimConfig(ic_preset="plummer", grid_size=64, n_particles=2000, seed=11)
+    a = build_plummer_ic(cfg)
+    b = build_plummer_ic(cfg)
+    np.testing.assert_array_equal(a.pos, b.pos)
+    np.testing.assert_array_equal(a.vel, b.vel)
+
+
 def test_load_into_particle_state():
     pytest.importorskip("taichi", reason="Taichi not installed")
     import taichi as ti

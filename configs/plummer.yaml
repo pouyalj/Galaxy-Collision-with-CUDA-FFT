@@ -1,0 +1,16 @@
+# Stage-3 example: an isolated Plummer sphere held in equilibrium by the real PM
+# pipeline (deposit -> solve -> grad -> gather -> KDK). The Stage-3 equilibrium test
+# (tests/test_sim.py) is a smaller, shorter version of this; here we run longer and
+# write snapshots. Uses the exact FFT oracle solver (fast and clean on CPU); switch
+# `solver: multigrid` for the portable production path.
+name: plummer-demo
+backend: cpu
+n_particles: 8000
+dt: 0.5            # Myr (≈ t_dyn/44 for M=1e10 Msun, a=5 kpc — comfortably stable)
+steps: 100
+ic_preset: plummer
+solver: fft
+grid_size: 64
+output_cadence: 25   # snapshot every 25 steps -> outputs/snapshot_000{00,25,50,75,100}.h5
+output_dir: outputs
+seed: 0

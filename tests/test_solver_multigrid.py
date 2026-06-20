@@ -82,6 +82,41 @@ def test_multigrid_matches_fft_oracle():
     assert rel_mean < 0.005, f"mean-relative deviation {rel_mean:.4f} exceeds 0.5%"
 
 
+def test_multigrid_matches_fft_oracle_off_center():
+    """Off-center source stresses the multipole open-BC faces (dipole/quadrupole non-zero).
+
+    The centered-blob test leaves the boundary near-spherically-symmetric (monopole nearly
+    exact); an off-center mass is the harder case for the face expansion, so this guards the
+    open-BC quality the production solver relies on.
+    """
+    pytest.importorskip("taichi", reason="Taichi not installed")
+    import taichi as ti
+
+    from galaxy_collision.solver.fft_oracle import FFTPoissonSolver
+    from galaxy_collision.solver.multigrid import MultigridPoissonSolver
+
+    ti.init(arch=ti.cpu)
+    n, dx = 64, 1.0
+    axis = np.arange(n) * dx
+    xx, yy, zz = np.meshgrid(axis, axis, axis, indexing="ij")
+    cx, cy, cz = 40.0, 28.0, 34.0  # deliberately off the box center
+    g = np.exp(-((xx - cx) ** 2 + (yy - cy) ** 2 + (zz - cz) ** 2) / (2.0 * 4.0**2))
+    rho_np = (g / (g.sum() * dx**3) * 2.0e11).astype(np.float32)
+    rho = ti.field(ti.f32, shape=(n, n, n))
+    rho.from_numpy(rho_np)
+
+    phi_mg = ti.field(ti.f32, shape=(n, n, n))
+    phi_fft = ti.field(ti.f32, shape=(n, n, n))
+    MultigridPoissonSolver(n, dx=dx, n_cycles=50).solve(rho, phi_mg)
+    FFTPoissonSolver(n, dx=dx).solve(rho, phi_fft)
+
+    a, b = phi_mg.to_numpy(), phi_fft.to_numpy()
+    m = 6
+    core = (slice(m, n - m),) * 3
+    rel_max = np.abs(a[core] - b[core]).max() / np.abs(b).max()
+    assert rel_max < 0.03, f"off-center peak-relative deviation {rel_max:.4f} exceeds 3%"
+
+
 def test_solver_factory():
     pytest.importorskip("taichi", reason="Taichi not installed")
     import taichi as ti

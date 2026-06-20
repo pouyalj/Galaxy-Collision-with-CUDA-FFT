@@ -42,8 +42,9 @@ def test_estimate_100m_matches_agent_md():
     est = estimate_memory(100_000_000, grid_size=256)
     # AGENT.md §5.2: ~2.8 GB particles (at 28 B) → 3.2 GB at our 32 B incl. mass.
     assert 3.0 < est.particle_bytes / 1e9 < 3.4
-    # Grid: 2 × 256^3 × 4 B ≈ 0.134 GB.
-    assert 0.12 < est.grid_bytes / 1e9 < 0.15
+    # Grid (production multigrid path, §11 RV4b): ρ+Φ (2) + accel (3) + MG hierarchy
+    # (≈3.43) ≈ 8.43 × 256^3 × 4 B ≈ 0.57 GB.
+    assert 0.50 < est.grid_bytes / 1e9 < 0.65
     assert "GB" in est.summary()
 
 
