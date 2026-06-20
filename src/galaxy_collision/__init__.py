@@ -3,10 +3,12 @@
 A modernization of the 2020 PHYD57 project "Galaxy Collisions With CUDA and FFT".
 See AGENT.md for the architecture and staged implementation plan.
 
-Stage 0 added the config layer and a trivial ``hello-sim`` smoke run. Stage 1 added
-the unit system (``units``) and the SoA particle/grid data model (``data``). Stage 2
-adds two-galaxy initial conditions (``ic``). The remaining physics (deposit, solver,
-integrator) lands in later stages.
+Stage 0 added the config layer and a trivial ``hello-sim`` smoke run. Stage 1 added the
+unit system (``units``) and the SoA particle/grid data model (``data``). Stage 2 added
+two-galaxy initial conditions (``ic``). Stage 3 adds the physics: CIC deposit + grad +
+gather (``deposit``), the pluggable Poisson solvers (``solver``), the KDK leapfrog with
+softened forces (``integrator``), and conservation diagnostics (``diagnostics``). Wiring
+the real step loop into ``sim`` and the exit-gate equilibrium tests close the stage.
 """
 
 from galaxy_collision import data, ic, units

@@ -52,6 +52,46 @@ def test_mass_conservation():
     assert total == pytest.approx(mass.sum(), rel=1e-4)
 
 
+def test_mass_conservation_dx_not_one():
+    """Deposited density integrates to total mass even when the cell size dx ≠ 1."""
+    pytest.importorskip("taichi", reason="Taichi not installed")
+    import taichi as ti
+
+    from galaxy_collision.data import GridState
+    from galaxy_collision.deposit import deposit_density
+
+    ti.init(arch=ti.cpu, random_seed=3)
+    n, gsize, dx = 4000, 32, 2.5
+    rng = np.random.default_rng(3)
+    # Interior in physical units: nodes span [0, (gsize-1)·dx].
+    pos = rng.uniform(2.0 * dx, (gsize - 3) * dx, size=(n, 3))
+    mass = rng.uniform(0.5, 2.0, size=n)
+    parts = _make_parts(pos, mass)
+    grid = GridState(gsize)
+    deposit_density(parts, grid.rho, dx=dx)
+    total = grid.rho.to_numpy().sum() * dx**3  # ∑ρ·cell_volume
+    assert total == pytest.approx(mass.sum(), rel=1e-4)
+
+
+def test_on_node_density_normalization_dx_not_one():
+    """rho[node] == mass/dx^3 isolates the 1/dx^3 normalization (no ∑·dx^3 cancellation)."""
+    pytest.importorskip("taichi", reason="Taichi not installed")
+    import taichi as ti
+
+    from galaxy_collision.data import GridState
+    from galaxy_collision.deposit import deposit_density
+
+    ti.init(arch=ti.cpu)
+    gsize, dx = 8, 2.5
+    # Physical position (2,3,4)·dx lands exactly on node (2,3,4): all mass to one node.
+    parts = _make_parts([[2 * dx, 3 * dx, 4 * dx]], [5.0])
+    grid = GridState(gsize)
+    deposit_density(parts, grid.rho, dx=dx)
+    rho = grid.rho.to_numpy()
+    assert rho[2, 3, 4] == pytest.approx(5.0 / dx**3)
+    assert rho.sum() == pytest.approx(5.0 / dx**3)  # nothing deposited elsewhere
+
+
 def test_single_particle_on_node():
     pytest.importorskip("taichi", reason="Taichi not installed")
     import taichi as ti

@@ -1,8 +1,17 @@
-"""Cloud-In-Cell (CIC) mass deposition and force gather (Stage 3).
+"""The particle-mesh force chain: CIC deposit, the "grad" step, and force gather (Stage 3).
 
-AGENT.md §5.5: trilinear (CIC) weights on *both* deposit and gather. The same
-symmetric weights on each side make the scheme momentum-conserving and kill the
-blocky "square galaxy" nearest-grid-point artifact the paper noted (legacy bug #5).
+This module owns the three grid↔particle stages of the PM force pipeline:
+:func:`deposit_density` (particles → grid mass density), :func:`potential_to_accel`
+(grid potential Φ → grid acceleration g = −∇Φ), and :func:`gather_acceleration`
+(grid g → per-particle acceleration). The Poisson solve ρ → Φ that sits between deposit
+and grad lives in ``solver/``.
+
+AGENT.md §5.5: trilinear (CIC) weights on *both* deposit and gather. Those symmetric
+weights, *together with* the antisymmetric central-difference gradient in
+:func:`potential_to_accel`, make the scheme **approximately linear-momentum conserving**
+(no net self-force) and kill the blocky "square galaxy" nearest-grid-point artifact the
+paper noted (legacy bug #5). Note this does *not* make angular momentum conserved on the
+grid — see ``diagnostics.py``.
 
 **Grid convention (node-centered — the single source of truth for Stage 3).**
 Samples live at grid *nodes*, not cell centers. Node ``(i, j, k)`` sits at physical
@@ -120,6 +129,51 @@ def _gather_accel(
         acc_z[p] = az
 
 
+@ti.kernel
+def _potential_to_accel(
+    phi: ti.template(),
+    ax_g: ti.template(),
+    ay_g: ti.template(),
+    az_g: ti.template(),
+    grid_size: ti.i32,
+    dx: ti.f32,
+):
+    inv_dx = 1.0 / dx
+    inv_2dx = 1.0 / (2.0 * dx)
+    n = grid_size
+    # g = −∇Φ at EVERY node: second-order central differences in the interior, first-order
+    # one-sided differences on the six faces. Defining g on the faces (rather than zeroing
+    # them) matters because the CIC gather stencil of a particle within one cell of a face
+    # still reads boundary nodes — zeroing them would silently halve that particle's force.
+    for i, j, k in ti.ndrange(n, n, n):
+        # Pre-declare: Taichi does not lift variables first assigned inside if-branches
+        # into the enclosing scope, so they must exist before the conditionals.
+        gx = 0.0
+        gy = 0.0
+        gz = 0.0
+        if i == 0:
+            gx = -(phi[1, j, k] - phi[0, j, k]) * inv_dx
+        elif i == n - 1:
+            gx = -(phi[n - 1, j, k] - phi[n - 2, j, k]) * inv_dx
+        else:
+            gx = -(phi[i + 1, j, k] - phi[i - 1, j, k]) * inv_2dx
+        if j == 0:
+            gy = -(phi[i, 1, k] - phi[i, 0, k]) * inv_dx
+        elif j == n - 1:
+            gy = -(phi[i, n - 1, k] - phi[i, n - 2, k]) * inv_dx
+        else:
+            gy = -(phi[i, j + 1, k] - phi[i, j - 1, k]) * inv_2dx
+        if k == 0:
+            gz = -(phi[i, j, 1] - phi[i, j, 0]) * inv_dx
+        elif k == n - 1:
+            gz = -(phi[i, j, n - 1] - phi[i, j, n - 2]) * inv_dx
+        else:
+            gz = -(phi[i, j, k + 1] - phi[i, j, k - 1]) * inv_2dx
+        ax_g[i, j, k] = gx
+        ay_g[i, j, k] = gy
+        az_g[i, j, k] = gz
+
+
 def deposit_density(parts, rho, dx: float = 1.0) -> None:
     """Deposit particle masses onto ``rho`` (M_sun/kpc^3) by CIC. Zeroes ``rho`` first."""
     grid_size = rho.shape[0]
@@ -147,4 +201,10 @@ def gather_acceleration(parts, ax_g, ay_g, az_g, acc_x, acc_y, acc_z, dx: float 
     )
 
 
-__all__ = ["deposit_density", "gather_acceleration"]
+def potential_to_accel(phi, ax_g, ay_g, az_g, dx: float = 1.0) -> None:
+    """Compute the node acceleration field g = −∇Φ from the potential ``phi`` (the "grad" step)."""
+    grid_size = phi.shape[0]
+    _potential_to_accel(phi, ax_g, ay_g, az_g, grid_size, float(dx))
+
+
+__all__ = ["deposit_density", "gather_acceleration", "potential_to_accel"]
