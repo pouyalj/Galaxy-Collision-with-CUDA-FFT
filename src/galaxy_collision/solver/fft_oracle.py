@@ -54,11 +54,13 @@ class FFTPoissonSolver(PoissonSolver):
         # Symmetric index distance so the circular convolution over `m` reproduces the
         # linear convolution: index i and m−i are the same distance from the origin.
         d = np.minimum(np.arange(m), m - np.arange(m)).astype(np.float64)
-        dxx, dyy, dzz = np.meshgrid(d, d, d, indexing="ij")
-        r = dx * np.sqrt(dxx**2 + dyy**2 + dzz**2)
-        green = np.zeros((m, m, m), dtype=np.float64)
-        nonzero = r > 0.0
-        green[nonzero] = -self.G * dx**3 / r[nonzero]
+        d2 = d * d
+        # Broadcast the per-axis squared distances rather than np.meshgrid (which would
+        # materialize three full (m,m,m) arrays — ~3.2 GB transient at m=512). The sum
+        # broadcasts into a single (m,m,m) array.
+        r2 = d2[:, None, None] + d2[None, :, None] + d2[None, None, :]
+        r2[0, 0, 0] = 1.0  # avoid 0-division at the self term; overwritten below
+        green = (-self.G * dx**3 / dx) / np.sqrt(r2)  # g = −G·dx³ / (dx·|index|)
         green[0, 0, 0] = 0.0  # self term (see module docstring)
         return np.fft.rfftn(green)
 

@@ -116,6 +116,7 @@ def run_simulation(
     write_snapshots: bool = True,
     solver_kwargs: dict[str, Any] | None = None,
     plummer_model=None,
+    direct_pe_softening: float | None = None,
 ) -> dict[str, Any]:
     """Run the full PM N-body pipeline and return a summary (incl. a diagnostics history).
 
@@ -125,6 +126,11 @@ def run_simulation(
     cadence are set. ``solver_kwargs`` is forwarded to the Poisson solver (e.g. ``n_cycles``
     for multigrid). ``plummer_model`` overrides the default :class:`PlummerModel` for the
     ``plummer`` preset (lets callers pick a denser, faster-evolving sphere for tests).
+
+    ``direct_pe_softening`` (kpc), when set, also records ``energy_direct`` in the history
+    using the exact O(N²) softened pair-sum PE. This is the *clean* conservation metric — it
+    omits the grid PE's fluctuating CIC self-energy term — but is O(N²), so enable it only
+    for small N (tests/validation), never for production-scale runs. Leave ``None`` otherwise.
     """
     import numpy as np
     import taichi as ti
@@ -182,7 +188,7 @@ def run_simulation(
         ).astype(np.float64)
         ke = diagnostics.kinetic_energy(mass_np, vel)
         pe = diagnostics.potential_energy_grid(grid.rho.to_numpy(), grid.phi.to_numpy(), DX)
-        return {
+        rec = {
             "step": step,
             "time": step * config.dt,
             "energy": ke + pe,
@@ -192,6 +198,13 @@ def run_simulation(
             "ang_momentum": diagnostics.angular_momentum(mass_np, pos, vel),
             "half_mass_radius": diagnostics.lagrangian_radius(mass_np, pos, 0.5),
         }
+        if direct_pe_softening is not None:
+            pe_d = diagnostics.potential_energy_direct(
+                mass_np, pos, softening=direct_pe_softening, grav=units.G
+            )
+            rec["potential_direct"] = pe_d
+            rec["energy_direct"] = ke + pe_d
+        return rec
 
     hist_cad = history_cadence or max(1, config.steps // 20)
     snap_dir = Path(config.output_dir)

@@ -518,12 +518,16 @@ Correctness is the gate for "research-grade." Tests, roughly in order of authori
 For high-stakes correctness checks, run the comparison as an isolated verification pass (e.g. a
 dedicated test job / subagent) rather than eyeballing plots.
 
-**On "energy drift < threshold" (test 5):** the PM energy ½ΣρΦ·dV is a *PM-tolerance* metric, not
-the exact integrated Hamiltonian, so it carries a dt-independent grid-discretization floor (the
-trajectory is still symplectic — the Kepler test proves that on the direct path, where energy and
-force share one Hamiltonian). **Stage-3 observed/threshold values** (over 5–7 dynamical times of a
-dense Plummer sphere): FFT-oracle solver ≈ 5×10⁻³ drift (gate < 1%); multigrid (warm-started, finite
-cycles) ≈ 1×10⁻² (gate < 3%). These bounds are encoded as named constants in `tests/test_sim.py`.
+**On "energy drift < threshold" (test 5):** the grid PE ½ΣρΦ·dV is a *PM-tolerance* metric, not
+the exact integrated Hamiltonian — it carries a dt-independent grid-discretization floor *plus* a
+fluctuating CIC self-energy term that makes its drift realization-fragile (it crosses 1% on ~2/5
+seeds). So the **exit-gate energy check uses the direct softened pair-sum PE** (softening = 1 cell,
+matching the grid's effective softening), which omits the self-energy noise and is robust: across 10
+seeds drift is **~0.1–0.9%** (FFT ~0.3%, multigrid worst ~0.9%) (gate < 2%, a named constant in
+`tests/test_sim.py`, giving ~2× margin plus cross-platform fp32 headroom).
+The grid PE is still *recorded* in the run history for production monitoring of large runs (where the
+O(N²) direct PE is infeasible). The trajectory is symplectic regardless — the Kepler test proves that
+on the direct path, where energy and force share one Hamiltonian.
 
 ---
 
@@ -626,6 +630,17 @@ multigrid ≈ FFT oracle):
 |---|---|---|---|---|
 | RV5 | Perf (Stage 5) | The open-BC multigrid converges at a healthy but non-optimal ~0.5–0.7/cycle (measured on small/64³ blobs). The power-of-two vertex-centered coarsening puts the coarse far-face a half-cell inside the fine one, which slows (does not break) convergence; correctness comes from the fine-grid operator + multipole BCs, so the converged Φ is right regardless. | Tune at Stage 5 (e.g. proper 2^L+1 nesting or W-cycles/Galerkin coarsening); fine for a CPU reference. | ⬜ Deferred to Stage 5 |
 | RV6 | Perf (Stage 5) | Device-residency gaps for the CPU reference: (a) the multigrid boundary multipole moments (M, CM, quadrupole) are computed host-side in NumPy each solve (a host↔device hop); (b) diagnostics pull full fields to host via `to_numpy()` each sample; (c) grid state is split across owners — `GridState` holds only ρ/Φ, the acceleration grids are allocated ad-hoc in `run_simulation`, and the MG hierarchy lives inside the solver. Clear and correct for the reference, but legacy bug #13 territory. | Move the moment reduction into a Taichi kernel; keep diagnostics device-side (Kahan fp32 on Metal); consolidate grid ownership when chasing device-resident performance. | ⬜ Deferred to Stage 5 |
+
+Items from the **exit-gate hardening review (2026-06-20)** — the FFT energy gate was found
+realization-fragile; fixed, plus an oracle memory fix and two deferrals logged:
+
+| ID | Area | Finding | Suggested action | Status |
+|---|---|---|---|---|
+| RV7 | Test robustness | The Plummer exit-gate energy drift was measured with the grid PE (½ΣρΦ·dV), whose fluctuating CIC self-energy term made it realization-fragile — it crossed the 1% gate on ~2/5 seeds (verified). | Gate on the **direct softened pair-sum PE** (softening = 1 cell) instead; ~0.1–0.9% drift across 10 seeds/both solvers, gate < 2%. Grid PE still recorded for production monitoring. | ✅ **Done** (2026-06-20) — `run_simulation(direct_pe_softening=…)`; gate in `tests/test_sim.py`. |
+| RV8 | Perf / memory | `fft_oracle._build_greens_ft` used `np.meshgrid(d,d,d)`, materializing three (2N)³ f64 arrays (~3.2 GB transient at 256³, exceeding the "~1 GB" the §5.2 oracle note implies). | Build the squared-distance grid by broadcasting (one (2N)³ array). | ✅ **Done** (2026-06-20) — broadcasting in `_build_greens_ft`. |
+| RV9 | Test margin (Stage 4) | The multigrid≈FFT-oracle agreement (test 2) sits at ~1.7% vs the 3% cap on a centered Gaussian fixture; fixture-sensitive. (Stage 3 added an off-center case, also ~1.7%.) | Re-derive a principled tolerance and/or add a compact/point-mass multigrid-vs-analytic case at Stage 4. | ⬜ Deferred to Stage 4 |
+| RV10 | Coverage (Stage 5) | Production-scale multigrid (n_cycles=20 @ 256³) has no residual-convergence assertion — only small grids are tested for convergence. | Add a 256³ residual-norm regression once the CUDA path makes it cheap. | ⬜ Deferred to Stage 5 |
+| RV11 | Diagnostics (Stage 4) | The grid PE's self-energy offset (RV7) follows into Stage-4 paper-reproduction energy diagnostics on large runs, where the O(N²) direct PE is infeasible. | Use a self-energy-subtracted grid energy estimate (or accept the offset and report drift, not absolute E) for big-run diagnostics. | ⬜ Deferred to Stage 4 |
 
 *Verified good in the same review:* the (kpc, Myr, M☉) unit system and derived G (independently
 re-derived to 4.4985×10⁻¹²; circular-velocity sanity check 231.9 km/s for 10¹¹ M☉ at 8 kpc),

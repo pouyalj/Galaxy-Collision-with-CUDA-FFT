@@ -4,8 +4,9 @@ AGENT.md §6 test 3 / §7 exit criteria: a sampled Plummer sphere run through th
 kick→drift→deposit→solve→grad→gather→kick loop must stay in steady state — directly
 testing the "density dissipates over time" bug the 2020 code had. Over **several dynamical
 times** we check that the sphere neither collapses nor evaporates (half-mass radius stays
-in a band), stays virialized (KE/|PE| ≈ ½), conserves energy under threshold, and barely
-drifts in linear momentum.
+in a band), stays virialized (KE/|PE| ≈ ½), conserves energy under threshold (measured with
+the *direct* softened pair-sum PE — the grid PE's CIC self-energy noise makes it flake at
+1%), and barely drifts in linear momentum.
 
 We use a *dense* sphere (small dynamical time t_dyn ≈ 8.3 Myr) so several crossings fit in
 a CI-affordable step count — running long enough that a real instability would actually
@@ -26,12 +27,19 @@ from galaxy_collision.config import SimConfig
 # A dense Plummer sphere: t_dyn = sqrt(a^3/GM) ≈ 8.3 Myr, so ~5-7 t_dyn is ~45-120 steps.
 _PLUMMER_MASS = 4.0e11
 _PLUMMER_A = 5.0
-# Stability bands (observed over 5-7 t_dyn: r_half ~1.0-1.11, virial ~0.48-0.52, fft drift
-# ~5e-3, mg drift ~1e-2, momentum drift ~1e-4). Bands give margin but stay non-vacuous: a
-# collapse drives r_half far below 0.8, evaporation far above 1.2.
+# The energy gate uses the *direct* softened pair-sum PE (softening = 1 cell, matching the
+# grid's effective softening): it omits the grid PE's fluctuating CIC self-energy term and is
+# realization-robust. (The grid-PE drift flakes — it crosses 1% on ~2/5 seeds — so it is only
+# *recorded* in the history for production monitoring, never asserted.) Across 10 seeds the
+# direct-PE drift is ~0.1-0.9% (fft ~0.3%, multigrid worst ~0.9% at the seed used here); the 2%
+# gate gives ~2x margin over the worst case plus cross-platform fp32 headroom.
+_DIRECT_PE_SOFTENING = 1.0  # kpc == DX
+EDRIFT_DIRECT = 0.02
+# Stability bands (observed over 5-7 t_dyn: r_half ~1.0-1.11, virial ~0.48-0.52, momentum
+# drift ~1e-4). Bands give margin but stay non-vacuous: a collapse drives r_half far below
+# 0.8, evaporation far above 1.2.
 R_HALF_LO, R_HALF_HI = 0.80, 1.20
 VIRIAL_LO, VIRIAL_HI = 0.45, 0.55
-EDRIFT_FFT, EDRIFT_MG = 0.01, 0.03
 PDRIFT_TOL = 1.0e-3
 
 
@@ -58,21 +66,22 @@ def _plummer_config(solver, **overrides):
 def _metrics(history):
     rh0 = history[0]["half_mass_radius"]
     rh = np.array([h["half_mass_radius"] / rh0 for h in history])
-    e0 = history[0]["energy"]
-    edrift = np.array([abs((h["energy"] - e0) / e0) for h in history])
+    ed0 = history[0]["energy_direct"]
+    edrift = np.array([abs((h["energy_direct"] - ed0) / ed0) for h in history])
     virial = np.array([h["kinetic"] / abs(h["potential"]) for h in history])
     p0 = history[0]["momentum"]
     pdrift = np.array([np.linalg.norm(h["momentum"] - p0) for h in history]) / _momentum_scale()
     return rh, edrift, virial, pdrift
 
 
-def _assert_stable(rh, virial, pdrift, n_tdyn):
+def _assert_stable(rh, edrift, virial, pdrift, n_tdyn):
     assert n_tdyn >= 5.0, f"run too short to test stability: {n_tdyn:.1f} t_dyn"
     assert rh.min() > R_HALF_LO and rh.max() < R_HALF_HI, (
         f"r_half left band: [{rh.min():.3f}, {rh.max():.3f}]"
     )
     assert VIRIAL_LO < virial.min() and virial.max() < VIRIAL_HI, "virial ratio left equilibrium"
     assert pdrift.max() < PDRIFT_TOL, f"momentum drift {pdrift.max():.2e} exceeds {PDRIFT_TOL}"
+    assert edrift.max() < EDRIFT_DIRECT, f"direct-PE energy drift {edrift.max():.2e} exceeds gate"
 
 
 def test_plummer_stays_stable_fft():
@@ -81,12 +90,12 @@ def test_plummer_stays_stable_fft():
 
     cfg = _plummer_config("fft", grid_size=48, n_particles=2000, dt=0.5, steps=120)
     res = sim.run_simulation(
-        cfg, write_snapshots=False, history_cadence=8, plummer_model=_dense_plummer(48)
+        cfg, write_snapshots=False, history_cadence=8, plummer_model=_dense_plummer(48),
+        direct_pe_softening=_DIRECT_PE_SOFTENING,
     )
     rh, edrift, virial, pdrift = _metrics(res["history"])
     n_tdyn = cfg.steps * cfg.dt / np.sqrt(_PLUMMER_A**3 / (units.G * _PLUMMER_MASS))
-    _assert_stable(rh, virial, pdrift, n_tdyn)
-    assert edrift.max() < EDRIFT_FFT, f"FFT energy drift {edrift.max():.2e} exceeds {EDRIFT_FFT}"
+    _assert_stable(rh, edrift, virial, pdrift, n_tdyn)
 
 
 def test_plummer_stays_stable_multigrid():
@@ -98,11 +107,11 @@ def test_plummer_stays_stable_multigrid():
     res = sim.run_simulation(
         cfg, write_snapshots=False, history_cadence=8,
         solver_kwargs={"n_cycles": 10}, plummer_model=_dense_plummer(48),
+        direct_pe_softening=_DIRECT_PE_SOFTENING,
     )
     rh, edrift, virial, pdrift = _metrics(res["history"])
     n_tdyn = cfg.steps * cfg.dt / np.sqrt(_PLUMMER_A**3 / (units.G * _PLUMMER_MASS))
-    _assert_stable(rh, virial, pdrift, n_tdyn)
-    assert edrift.max() < EDRIFT_MG, f"mg energy drift {edrift.max():.2e} exceeds {EDRIFT_MG}"
+    _assert_stable(rh, edrift, virial, pdrift, n_tdyn)
 
 
 def test_snapshots_written_and_readable(tmp_path):
