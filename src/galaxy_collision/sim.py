@@ -14,6 +14,8 @@ snapshots written at ``output_cadence``.
 """
 
 import argparse
+import platform
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +28,86 @@ _ARCH_NAMES = {"cpu": "cpu", "cuda": "cuda", "metal": "metal"}
 # Cell size: the box is ``grid_size`` kpc with 1 kpc^3 cells (AGENT.md §3.4), node-centered.
 DX = 1.0
 
+# Taichi reports the resolved CPU arch as its native name, not "cpu".
+_CPU_ARCHS = frozenset({"arm64", "x64", "cpu"})
+
+
+def _backend_honored(requested: str, resolved: str) -> bool:
+    """True if Taichi initialized on the requested backend (no silent fallback).
+
+    Taichi falls back to CPU when a GPU backend is unavailable (e.g. ``cuda`` on a Mac),
+    reporting the native CPU arch (``arm64``/``x64``). A ``cpu`` request is honored by any
+    CPU arch; ``cuda``/``metal`` must resolve to themselves.
+    """
+    if requested == "cpu":
+        return resolved in _CPU_ARCHS
+    return requested == resolved
+
+
+def _hardware_description(resolved_arch: str) -> str:
+    """Human-readable description of the device a resolved Taichi arch runs on."""
+    cpu = platform.processor() or platform.machine() or "CPU"
+    if platform.system() == "Darwin":
+        try:
+            out = subprocess.run(
+                ["sysctl", "-n", "machdep.cpu.brand_string"],
+                capture_output=True, text=True, timeout=2,
+            )
+            cpu = out.stdout.strip() or cpu
+        except (OSError, subprocess.SubprocessError):
+            pass
+    if resolved_arch == "cuda":
+        try:
+            out = subprocess.run(
+                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                capture_output=True, text=True, timeout=5,
+            )
+            names = [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]
+            if names:
+                extra = f" (+{len(names) - 1} more)" if len(names) > 1 else ""
+                return f"NVIDIA {names[0]}{extra}"
+        except (OSError, subprocess.SubprocessError):
+            pass
+        return "NVIDIA CUDA GPU"
+    if resolved_arch == "metal":
+        return f"{cpu} — Apple GPU (Metal)"
+    if resolved_arch == "vulkan":
+        return f"{cpu} — Vulkan GPU"
+    return f"{cpu} (CPU)"
+
+
+def init_backend(config: SimConfig) -> dict[str, Any]:
+    """Initialize Taichi on the configured backend and report the detected hardware.
+
+    Prints one line announcing the device the simulation will actually run on. If the
+    requested backend is unavailable, Taichi silently falls back (e.g. ``cuda`` → CPU on a
+    Mac); we detect that and print a clear WARNING instead, so a run never *looks* like it
+    used a GPU it didn't. Returns ``{requested, resolved, device, fell_back}``.
+    """
+    import taichi as ti
+
+    arch = getattr(ti, _ARCH_NAMES[config.backend])
+    ti.init(arch=arch, random_seed=config.seed, offline_cache=False)
+    try:
+        resolved = ti.lang.impl.current_cfg().arch.name
+    except Exception:  # pragma: no cover - defensive against Taichi internals moving
+        resolved = "unknown"
+    info = {
+        "requested": config.backend,
+        "resolved": resolved,
+        "device": _hardware_description(resolved),
+        "fell_back": not _backend_honored(config.backend, resolved),
+    }
+    if info["fell_back"]:
+        print(
+            f"WARNING: backend '{info['requested']}' is unavailable here — Taichi fell back to "
+            f"'{resolved}'. Running on {info['device']}."
+        )
+    else:
+        print(f"galaxy-collision: running on {info['device']}  "
+              f"(backend={info['requested']}, arch={resolved})")
+    return info
+
 
 def run_hello_sim(config: SimConfig) -> dict[str, Any]:
     """Run the no-op smoke simulation and return a small summary dict.
@@ -35,10 +117,8 @@ def run_hello_sim(config: SimConfig) -> dict[str, Any]:
     physical. Verifies the whole toolchain end-to-end without committing to any
     physics decisions.
     """
+    backend = init_backend(config)
     import taichi as ti
-
-    arch = getattr(ti, _ARCH_NAMES[config.backend])
-    ti.init(arch=arch, random_seed=config.seed, offline_cache=False)
 
     # A handful of placeholder particles — enough to exercise a kernel, cheap enough
     # to run anywhere (CI included).
@@ -66,6 +146,8 @@ def run_hello_sim(config: SimConfig) -> dict[str, Any]:
     return {
         "name": config.name,
         "backend": config.backend,
+        "backend_resolved": backend["resolved"],
+        "device": backend["device"],
         "arch": _ARCH_NAMES[config.backend],
         "n_particles": n,
         "steps": config.steps,
@@ -143,8 +225,7 @@ def run_simulation(
     from galaxy_collision.io import snapshot_from_states, write_snapshot
     from galaxy_collision.solver import make_solver
 
-    arch = getattr(ti, _ARCH_NAMES[config.backend])
-    ti.init(arch=arch, random_seed=config.seed, offline_cache=False)
+    backend = init_backend(config)
 
     icr = _build_ic(config, plummer_model=plummer_model)
     n, gsize = icr.n, config.grid_size
@@ -248,6 +329,8 @@ def run_simulation(
     return {
         "name": config.name,
         "backend": config.backend,
+        "backend_resolved": backend["resolved"],
+        "device": backend["device"],
         "preset": config.ic_preset,
         "solver": config.solver,
         "n_particles": n,

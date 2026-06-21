@@ -289,7 +289,7 @@ nvcc final_draft1.cu -Xcompiler -fopenmp \
 | D4 | Apple GPU priority | **First-class performance** | Owner |
 | D5 | Poisson solver | **Pluggable**: open-BC **multigrid** = portable default; **zero-padded FFT** = NVIDIA validation oracle | FFT is the one piece Taichi can't do portably; multigrid is pure portable kernels and fixes the periodic-BC physics bug. FFT oracle gives spectral ground-truth for tests + paper repro |
 | D6 | Precision | fp32 for compute on all backends; fp64 diagnostics on CPU/CUDA only | Apple Metal has **no hardware fp64** — a hard constraint |
-| D7 | Dev hardware | NVIDIA workstation (owner's); Apple Metal validation needs Mac access | See Risk R1 |
+| D7 | Dev hardware | **Apple M5 Pro Mac** is the primary dev box (CPU + Metal); a **CUDA NVIDIA workstation is not yet set up** — it is a Stage-5 prerequisite to configure together (§7). | Updated 2026-06-21; Apple hardware now on hand (resolves R1) |
 | D8 | Particle count | **Derive N from physical galaxy mass**: N = M_galaxy / m_particle. Particle mass is the resolution knob, bounded by memory. Full-res (840 M☉/particle) ≈ 5.5×10⁸ total; coarsen to land in the 10–100M working range (§5.2). | Owner |
 | D9 | Central black holes | **In scope** — one massive, softened particle per galaxy that carries real grid mass. | Owner |
 | D10 | Dark matter | **Deferred** — not part of the 2020 project; keep a hook, revisit later. | Owner |
@@ -299,6 +299,7 @@ nvcc final_draft1.cu -Xcompiler -fopenmp \
 | D14 | Config format | **YAML** run configs (`pyyaml`), validated by the `SimConfig` schema | Owner (2026-06-16) |
 | D15 | Unit system | **(kpc, Myr, M☉)**; single `G ≈ 4.498×10⁻¹² kpc³ M☉⁻¹ Myr⁻²` *derived* from the standard `4.30091×10⁻³ pc M☉⁻¹ (km/s)²` and unit-tested | Owner (2026-06-16); resolves §9 Q2. Aligns dt=0.01 Myr with the 2020 code's 10⁴ yr step |
 | D16 | Stage-2 IC modeling | **Hernquist bulge (~10% of stellar mass)** + Gaia-profile disk; **same SMBH ≈ 1×10⁸ M☉ in both galaxies**; **cold circular disk** (v_c from softened enclosed mass); disk profile *shape* from paper Eq. 1 **normalized to the mass-derived target** | Owner (2026-06-16). Bulge dispersion + thin-disk rotation are virial/spherical approximations to be validated at Stage 3; per-galaxy distinct masses & warm disk are Stage-8 refinements |
+| D17 | Apple Metal target | **Optimize Metal for the M5 *Pro* tier** (the owner's dev Mac). | Owner (2026-06-21); resolves §9 Q1. This is the in-hand validation/perf-target hardware |
 
 ---
 
@@ -382,6 +383,12 @@ true per-galaxy masses is a Stage-8 refinement.)
 
 - **Taichi** as the kernel layer: write each kernel once with `@ti.kernel`; select
   `ti.init(arch=ti.cpu | ti.cuda | ti.metal)` at runtime. Compiles to native code per backend.
+- **Hardware reporting (`sim.init_backend`):** every run prints the **detected device it is actually
+  running on** (e.g. `Apple M5 Pro — Apple GPU (Metal)`, `NVIDIA <name>`, or `… (CPU)`). Taichi
+  *silently* falls back to CPU when a requested GPU backend is unavailable (e.g. `cuda` on a Mac → the
+  native `arm64` arch); `init_backend` detects that mismatch and prints a loud **WARNING** so a run
+  never *looks* like it used a GPU it didn't. The resolved arch + device are returned in the run
+  summary (`backend_resolved`, `device`).
 - **Precision (D6):** all force/position/velocity math in **fp32** on every backend (positions live
   in grid units 0–256, so fp32 is plenty for forces). **fp64 only for diagnostics** (total
   energy/momentum drift), computed on CPU or CUDA; on Apple, diagnostics either run in fp32 with
@@ -548,7 +555,7 @@ this section is the tracked source of truth).
 | **2 — Initial conditions** | Mass-derived N, disk+bulge sampling, central BH, 4v/2v setups | CPU | ICs match target mass/profile; reproducible from seed | ✅ **Done** (2026-06-16) |
 | **3 — CPU reference (anchor)** | A *correct* sim: CIC + open-BC multigrid + KDK + softening + diagnostics + I/O | CPU | Plummer stays stable; two-body Kepler matches; energy drift < threshold | ✅ **Done** (2026-06-20) |
 | **4 — Validation & FFT oracle** | Zero-padded isolated FFT (✅ done in Stage 3) + full test suite + paper reproduction | CPU/CUDA | Multigrid ≈ FFT within tolerance (✅ test 2 passing); paper figures reproduced (⬜) | 🟡 partial |
-| **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | ⬜ |
+| **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | ⬜ **Prereq:** a CUDA NVIDIA workstation + Taichi CUDA runtime is **not yet set up** (D7) — configure it together as the first task when Stage 5 begins, before any CUDA work |
 | **6 — Apple / Metal** | First-class Apple GPU, fp32 compute policy | Metal | Cross-backend parity (test 6); perf benchmark vs CUDA | ⬜ |
 | **7 — Visualization & output** | Realtime GGUI, batch→movie, paper figures, tracer particle | all | All four output modes working | ⬜ |
 | **8 — Research campaigns** | 4v/2v studies, central-BH experiments, longer runs | all | Reproduce + extend 2020 results (future hooks: DM halo, TreePM) | ⬜ |
@@ -561,10 +568,10 @@ suite** to count as done.
 
 ## 8. Risks & mitigations
 
-- **R1 — No Apple hardware on hand.** Owner's dev box is an NVIDIA workstation; Metal is a
-  first-class *target*. Need access to an Apple-Silicon Mac (ideally the M-series tier being
-  targeted) to validate/benchmark Phase 4. *Mitigation:* borrow/cloud Mac; keep the Metal path
-  exercised in CI early via a small smoke test; design so Metal is "just another `arch`."
+- **R1 — ~~No Apple hardware on hand~~ → RESOLVED (2026-06-21).** The owner's primary dev box is now
+  an **Apple M5 Pro** Mac, which is exactly the Metal target tier (D17) — Metal validation/benchmarking
+  runs directly on it (Taichi `arch=metal` confirmed working). The flipped risk is now **CUDA access**:
+  the NVIDIA workstation is not yet set up and is a Stage-5 prerequisite (D7, §7).
 - **R2 — Taichi Metal feature/perf gaps** (e.g. large atomic-scatter throughput, kernel features).
   *Mitigation:* a Phase-0/1 spike that benchmarks CIC deposition on Metal; if it underperforms,
   fall back plan is **Vulkan-compute + VkFFT** (one GPU source covering NVIDIA + Apple via
@@ -585,11 +592,14 @@ black hole is in scope (D9); dark matter is deferred (D10). Stage-0 toolchain se
 resolves former Q4 (repo placement). Unit system standardized on **(kpc, Myr, M☉)** with a single
 derived, unit-tested G (D15) — this resolves former Q2.
 
+**Resolved 2026-06-21:** former Q1 (Apple hardware) — the owner's dev Mac is an **Apple M5 Pro**;
+Metal is validated/optimized directly on it at the **M5 Pro tier** (D17), resolving Risk R1. The
+counterpart is that the CUDA NVIDIA workstation is not yet provisioned and is a Stage-5 prerequisite
+(D7, §7 Stage-5 row).
+
 Still open:
 
-1. **Apple hardware:** do you have (or can you get) access to an M-series Mac for Metal validation,
-   and which tier ("M5-like") are we optimizing for?
-2. **Real-time viewer:** is an in-process Taichi GGUI window sufficient, or do you want a standalone
+1. **Real-time viewer:** is an in-process Taichi GGUI window sufficient, or do you want a standalone
    app / web viewer?
 
 ---
