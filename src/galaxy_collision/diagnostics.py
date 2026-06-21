@@ -25,6 +25,26 @@ grid-discretization floor that does *not* shrink with ``dt`` — it is a PM-tole
 not a proof of symplectic conservation. (The trajectory *is* symplectic; the Kepler test
 proves that on the direct path, where energy and force share one Hamiltonian.)
 
+**Big-run energy diagnostics (RV11).** For the two-galaxy runs (10–100M particles) the O(N²)
+direct PE is infeasible, so the grid PE is the only available potential-energy metric. How to use
+it: the grid PE ½ΣρΦ·dV recovers the physical (direct, ε≈1 cell) PE up to a *fixed* discretization
+offset of the estimator — ~2% for the FFT oracle, ~4% for multigrid, stable across realizations
+(this offset is locked by ``tests/test_diagnostics.py``). That offset, not a self-energy term, is
+the bulk of the grid↔physical gap: the FFT oracle zeros only the *on-node* point self-term
+(``g(r=0)=0``), while the CIC *cloud* self-energy — a particle's mass spread over up to 8 nodes —
+survives for *both* solvers and is sub-cell-position dependent (so it fluctuates as particles move
+across a cell); probes put it well under a percent of the grid PE. Subtracting it would shift the
+absolute number by ~0.1% and would *not* remove the run-to-run scatter, so we **don't** subtract it.
+
+The big-run conservation metric is therefore the **drift** of the grid energy used as a *monitoring*
+signal — never a pass/fail gate. RV7 retired grid-PE drift as the Stage-3 exit gate precisely
+because its realization scatter crosses ~1% on some seeds (the Plummer exit gate uses the direct PE
+instead); that scatter, not the small self-energy, is the caveat to keep in mind here. The
+offset-insensitive **virial** ratio T/|W| (recorded each sample) is the robust supporting check:
+≈½ for an isolated virialized object, and for a *collision* a smooth quantity to track for
+consistency — not a fixed-½ gate, since the global T includes the bulk approach KE (subtract the
+bulk frame for a single-remnant virial).
+
 Per the precision policy (D6) diagnostics are computed in **fp64** — here on the host in
 NumPy, fed by ``field.to_numpy()`` at the output cadence. They are not in the per-step hot
 path, so host fp64 is both correct and clear (a Metal-safe fp32/Kahan path is a later
@@ -137,6 +157,22 @@ def total_energy_direct(
     return kinetic_energy(mass, vel) + potential_energy_direct(mass, pos, softening, grav)
 
 
+def total_energy_grid(
+    mass: np.ndarray, vel: np.ndarray, rho: np.ndarray, phi: np.ndarray, dx: float = 1.0
+) -> float:
+    """KE + PM grid PE — the big-run total energy (RV11). Absolute value carries the documented
+    ~2–4% grid-PE discretization offset; track its *drift*, not the absolute number."""
+    return kinetic_energy(mass, vel) + potential_energy_grid(rho, phi, dx)
+
+
+def virial_ratio(kinetic: float, potential: float) -> float:
+    """T/|W| — ≈ 0.5 for an isolated system in virial equilibrium. A robust big-run check (RV11):
+    dimensionless and insensitive to the grid-PE offset. For a *collision* the global T includes
+    the bulk approach KE, so it is not ≈0.5 there — track its evolution as a consistency monitor
+    (subtract the bulk frame for a meaningful single-remnant virial)."""
+    return kinetic / abs(potential) if potential != 0.0 else float("nan")
+
+
 __all__ = [
     "kinetic_energy",
     "linear_momentum",
@@ -146,4 +182,6 @@ __all__ = [
     "potential_energy_direct",
     "potential_energy_grid",
     "total_energy_direct",
+    "total_energy_grid",
+    "virial_ratio",
 ]

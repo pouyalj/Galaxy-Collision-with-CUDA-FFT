@@ -146,6 +146,27 @@ def test_run_rejects_ic_that_does_not_fit_box():
         sim.run_simulation(cfg, write_snapshots=False)
 
 
+def test_two_galaxy_collision_smoke():
+    """The full two-galaxy pipeline runs end to end: build_ic → box-fit guard → disk-velocity
+    equilibration (§5.5/D18) → the KDK PM loop → diagnostics. Coarse + 3 steps; checks wiring,
+    not physics. Uses a grid large enough that both galaxies (separation 90 kpc) fit the box."""
+    pytest.importorskip("taichi", reason="Taichi not installed")
+    from galaxy_collision import sim
+
+    cfg = SimConfig(
+        name="collision-smoke", backend="cpu", ic_preset="two_galaxy_4v", solver="multigrid",
+        grid_size=160, n_particles=2000, dt=0.5, steps=3, output_cadence=0, seed=0,
+    )
+    res = sim.run_simulation(
+        cfg, write_snapshots=False, history_cadence=1, solver_kwargs={"n_cycles": 10}
+    )
+    assert res["status"] == "ok"
+    assert res["preset"] == "two_galaxy_4v"
+    assert res["n_particles"] == 2002  # 1000 stars/galaxy + 1 central BH each
+    assert np.isfinite(res["energy_drift_max"])
+    assert len(res["history"]) == 4  # steps 0, 1, 2, 3 at history_cadence=1
+
+
 def test_build_ic_dispatch():
     pytest.importorskip("taichi", reason="Taichi not installed")
     from galaxy_collision.sim import _build_ic

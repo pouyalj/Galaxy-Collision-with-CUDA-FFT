@@ -300,6 +300,7 @@ nvcc final_draft1.cu -Xcompiler -fopenmp \
 | D15 | Unit system | **(kpc, Myr, M☉)**; single `G ≈ 4.498×10⁻¹² kpc³ M☉⁻¹ Myr⁻²` *derived* from the standard `4.30091×10⁻³ pc M☉⁻¹ (km/s)²` and unit-tested | Owner (2026-06-16); resolves §9 Q2. Aligns dt=0.01 Myr with the 2020 code's 10⁴ yr step |
 | D16 | Stage-2 IC modeling | **Hernquist bulge (~10% of stellar mass)** + Gaia-profile disk; **same SMBH ≈ 1×10⁸ M☉ in both galaxies**; **cold circular disk** (v_c from softened enclosed mass); disk profile *shape* from paper Eq. 1 **normalized to the mass-derived target** | Owner (2026-06-16). Bulge dispersion + thin-disk rotation are virial/spherical approximations to be validated at Stage 3; per-galaxy distinct masses & warm disk are Stage-8 refinements |
 | D17 | Apple Metal target | **Optimize Metal for the M5 *Pro* tier** (the owner's dev Mac). | Owner (2026-06-21); resolves §9 Q1. This is the in-hand validation/perf-target hardware |
+| D18 | Stage-4 reproduction scope | **Higher-fidelity, CPU-only repro:** 256³ grid, **10–30M particles**, both 4v & 2v over ~400–450 Myr; **headline figures only** (collision density-projection sequence + Sun-like tracer trajectory). Production solver = **multigrid** (portable default, D5); FFT oracle as a spot-check. Done in **three review checkpoints** (4A validation hardening → 4B repro machinery → 4C production runs + write-up). | Owner (2026-06-21). Measured CPU cost (M5 Pro): ~0.6 s/step (multigrid) / ~1.3 s/step (FFT) at 256³; a ~900-step 30M-particle run is ~18 min, so the full repro is CPU-affordable — **no CUDA (Stage 5) dependency**. Static matplotlib figures only; GGUI/movie viz stays Stage 7 |
 
 ---
 
@@ -544,9 +545,23 @@ The full, shareable version of this plan — with per-stage objectives, tasks, d
 criteria — is in **`Galaxy_Collision_Modernization_Plan.docx`** (a generated artifact, gitignored;
 this section is the tracked source of truth).
 
-> **Current status (2026-06-20):** Stages 0–3 ✅ done. The FFT oracle was pulled forward into
-> Stage 3 (so multigrid is validated against it now). Next: Stage 4 (paper reproduction + the
-> remaining validation campaign on top of the existing oracle/multigrid cross-check).
+> **Current status (2026-06-21):** Stages 0–3 ✅ done. The FFT oracle was pulled forward into
+> Stage 3 (so multigrid is validated against it now). **Stage 4 in progress** (scope = D18),
+> structured as three review checkpoints:
+> - **4A — Validation hardening:** principled multigrid≈oracle tolerance + analytic point-mass
+>   multigrid test (RV9); reconcile the 0.3 kpc IC velocity softening with the ~1 kpc grid
+>   softening so disks launch in equilibrium (§5.5); a big-run grid-energy diagnostic that omits
+>   the CIC self-energy offset (RV11); two-galaxy integration smoke test.
+> - **4B — Repro machinery:** Sun-like tracer particle (~8.32 kpc galactocentric) + path
+>   recording; matplotlib density-projection figures (the DISLIN `make_image` replacement, static
+>   only); tracer-trajectory plot; a `paper_repro` config + driver.
+> - **4C — Production runs + write-up:** 4v & 2v at 256³ / 10–30M particles, headline figures,
+>   qualitative comparison to the 2020 paper; flip this row to ✅. **Validation bar (explicit):**
+>   at 10–30M the O(N²) direct PE is infeasible, so 4C has **no hard energy-conservation gate** —
+>   conservation rests on grid-energy *drift* (a monitor, not pass/fail; RV7/RV11) + the virial
+>   trend. 4C validation is therefore **qualitative** (morphology figures + tracer path + virial
+>   consistency), not a numeric energy gate. (A cold thin disk also heats/spreads over many t_dyn
+>   in a PM code — mitigated by the chosen resolution; a warm disk is the Stage-8 fix, D16.)
 
 | Stage | Outcome | Backend | Exit gate | Status |
 |---|---|---|---|---|
@@ -648,9 +663,9 @@ realization-fragile; fixed, plus an oracle memory fix and two deferrals logged:
 |---|---|---|---|---|
 | RV7 | Test robustness | The Plummer exit-gate energy drift was measured with the grid PE (½ΣρΦ·dV), whose fluctuating CIC self-energy term made it realization-fragile — it crossed the 1% gate on ~2/5 seeds (verified). | Gate on the **direct softened pair-sum PE** (softening = 1 cell) instead; ~0.1–0.9% drift across 10 seeds/both solvers, gate < 2%. Grid PE still recorded for production monitoring. | ✅ **Done** (2026-06-20) — `run_simulation(direct_pe_softening=…)`; gate in `tests/test_sim.py`. |
 | RV8 | Perf / memory | `fft_oracle._build_greens_ft` used `np.meshgrid(d,d,d)`, materializing three (2N)³ f64 arrays (~3.2 GB transient at 256³, exceeding the "~1 GB" the §5.2 oracle note implies). | Build the squared-distance grid by broadcasting (one (2N)³ array). | ✅ **Done** (2026-06-20) — broadcasting in `_build_greens_ft`. |
-| RV9 | Test margin (Stage 4) | The multigrid≈FFT-oracle agreement (test 2) sits at ~1.7% vs the 3% cap on a centered Gaussian fixture; fixture-sensitive. (Stage 3 added an off-center case, also ~1.7%.) | Re-derive a principled tolerance and/or add a compact/point-mass multigrid-vs-analytic case at Stage 4. | ⬜ Deferred to Stage 4 |
+| RV9 | Test margin (Stage 4) | The multigrid≈FFT-oracle agreement (test 2) sits at ~1.7% vs the 3% cap on a centered Gaussian fixture; fixture-sensitive. (Stage 3 added an off-center case, also ~1.7%.) | Re-derive a principled tolerance and/or add a compact/point-mass multigrid-vs-analytic case at Stage 4. | ✅ **Done** (2026-06-21, 4A) — added `test_multigrid_point_mass_far_field_monopole` (deviation obeys the *derived* 0.26→0.4/r² discrete-Green's law, monotone) + a scale-free `_resid_ratio` convergence gate; the fixture-sensitive MG≈oracle cap is demoted to a documented loose sanity check (the tight checks are convergence + the analytic anchor). |
 | RV10 | Coverage (Stage 5) | Production-scale multigrid (n_cycles=20 @ 256³) has no residual-convergence assertion — only small grids are tested for convergence. | Add a 256³ residual-norm regression once the CUDA path makes it cheap. | ⬜ Deferred to Stage 5 |
-| RV11 | Diagnostics (Stage 4) | The grid PE's self-energy offset (RV7) follows into Stage-4 paper-reproduction energy diagnostics on large runs, where the O(N²) direct PE is infeasible. | Use a self-energy-subtracted grid energy estimate (or accept the offset and report drift, not absolute E) for big-run diagnostics. | ⬜ Deferred to Stage 4 |
+| RV11 | Diagnostics (Stage 4) | The grid PE's self-energy offset (RV7) follows into Stage-4 paper-reproduction energy diagnostics on large runs, where the O(N²) direct PE is infeasible. | Use a self-energy-subtracted grid energy estimate (or accept the offset and report drift, not absolute E) for big-run diagnostics. | ✅ **Done** (2026-06-21, 4A) — took the *report-drift* path (evidence-based): probes showed the CIC cloud self-energy is sub-percent while the grid-PE↔direct-PE gap is a ~2–4% *discretization* offset (locked by `tests/test_diagnostics.py`), so a self-energy subtraction would change absolute E by ~0.1% and not shrink the drift. Big-run conservation is the grid-energy **drift** (a *monitoring* metric, not a gate, per RV7) plus the offset-insensitive **virial** ratio (`virial_ratio`/`total_energy_grid` helpers, virial recorded in the run history). |
 
 *Verified good in the same review:* the (kpc, Myr, M☉) unit system and derived G (independently
 re-derived to 4.4985×10⁻¹²; circular-velocity sanity check 231.9 km/s for 10¹¹ M☉ at 8 kpc),

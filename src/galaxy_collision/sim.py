@@ -245,6 +245,15 @@ def run_simulation(
         config.solver, gsize, dx=DX, grav_constant=units.G, **(solver_kwargs or {})
     )
 
+    # Launch each disk in equilibrium with the PM grid force (not an analytic-softening guess):
+    # measure the grid's own rotation curve and set the disk velocities from it (§5.5 / D18).
+    # Uses the production grid fields as scratch — the prime below re-deposits all particles.
+    if config.ic_preset in ("two_galaxy_4v", "two_galaxy_2v"):
+        ic_mod.equilibrate_disk_velocities(
+            icr, dx=DX, solver=solver, rho=grid.rho, phi=grid.phi,
+            ax=ax_g, ay=ay_g, az=az_g, parts=parts,
+        )
+
     # The force chain. After the first (cold) call, warm-start the iterative solver from
     # the previous step's potential — Φ moves little per step, so a few cycles suffice.
     warm = {"on": False}
@@ -278,6 +287,10 @@ def run_simulation(
             "momentum": diagnostics.linear_momentum(mass_np, vel),
             "ang_momentum": diagnostics.angular_momentum(mass_np, pos, vel),
             "half_mass_radius": diagnostics.lagrangian_radius(mass_np, pos, 0.5),
+            # Offset-insensitive supporting conservation metric for big runs (RV11). For a
+            # collision this is a consistency monitor (it includes bulk approach KE), not a
+            # fixed-½ gate.
+            "virial": diagnostics.virial_ratio(ke, pe),
         }
         if direct_pe_softening is not None:
             pe_d = diagnostics.potential_energy_direct(
@@ -291,7 +304,9 @@ def run_simulation(
     snap_dir = Path(config.output_dir)
     snapshots: list[str] = []
     # Scalar/vector diagnostics worth persisting alongside each snapshot.
-    _diag_keys = ("energy", "kinetic", "potential", "momentum", "ang_momentum", "half_mass_radius")
+    _diag_keys = (
+        "energy", "kinetic", "potential", "momentum", "ang_momentum", "half_mass_radius", "virial"
+    )
 
     def _snapshot_due(step: int) -> bool:
         if not (write_snapshots and config.output_cadence > 0):
@@ -341,6 +356,7 @@ def run_simulation(
         "energy_final": ef,
         "energy_drift": drift,  # endpoint (first vs last sample)
         "energy_drift_max": drift_max,  # worst sample over the run
+        "virial_final": history[-1]["virial"],  # supporting big-run conservation monitor (RV11)
         "history": history,
         "snapshots": snapshots,
         "status": "ok",

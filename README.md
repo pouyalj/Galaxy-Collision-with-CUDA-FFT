@@ -10,13 +10,15 @@ now being rebuilt as **one portable source** that runs on CPU, NVIDIA CUDA, and
 Apple-Silicon GPU via [Taichi](https://www.taichi-lang.org/), with research-grade
 physics at 10–100M particles.
 
-> **Status: Stages 0–3 done.** On top of the scaffold, config loader, CI, units, SoA
-> data model, and two-galaxy/Plummer initial conditions, there is now a **correct CPU
-> simulation**: CIC deposit/gather, both Poisson solvers (open-boundary multigrid plus a
+> **Status: Stages 0–3 done; Stage 4 in progress.** On top of the scaffold, config loader,
+> CI, units, SoA data model, and two-galaxy/Plummer initial conditions, there is a **correct
+> CPU simulation**: CIC deposit/gather, both Poisson solvers (open-boundary multigrid plus a
 > zero-padded FFT oracle), a KDK leapfrog with Plummer softening, fp64 conservation
-> diagnostics, and HDF5/npz snapshots — driven by `galaxy-sim`. It is validated by a
-> stable Plummer sphere, a two-body Kepler orbit, and multigrid-vs-oracle agreement.
-> Next is Stage 4 (paper reproduction + the broader validation campaign). See
+> diagnostics, and HDF5/npz snapshots — driven by `galaxy-sim`. It is validated by a stable
+> Plummer sphere, a two-body Kepler orbit, and multigrid-vs-oracle agreement. **Stage 4**
+> (validation hardening + paper reproduction) is underway — Checkpoint **4A** is in:
+> principled multigrid tolerances, disks launched in equilibrium with the grid's own measured
+> rotation curve, a big-run energy metric, and a two-galaxy collision smoke test. See
 > [`AGENT.md`](AGENT.md) for the full architecture and staged plan, and
 > [`docs/development.md`](docs/development.md) to get started.
 
