@@ -28,17 +28,20 @@ def _plt():
 
 
 def _hist2d(pos, mass, extent, bins, axes):
-    """Mass-weighted 2D histogram of ``pos`` projected onto ``axes`` (surface density), oriented
-    for ``imshow(origin="lower")``."""
+    """Projected **surface density** (M_sun/kpc^2) of ``pos`` on ``axes``: the mass-weighted 2D
+    histogram divided by the bin area, oriented for ``imshow(origin="lower")``. Dividing by the
+    bin area (not leaving it as mass-per-bin) makes the colorbar's Σ label a real physical
+    quantity, independent of ``bins`` (it only rescales LogNorm, so the image is unchanged)."""
     a0, a1 = axes
-    h, _, _ = np.histogram2d(
+    h, xe, ye = np.histogram2d(
         pos[:, a0],
         pos[:, a1],
         bins=bins,
         range=[[extent[0], extent[1]], [extent[2], extent[3]]],
         weights=mass,
     )
-    return h.T
+    bin_area = (xe[1] - xe[0]) * (ye[1] - ye[0])  # kpc^2; exact from the returned edges
+    return h.T / bin_area
 
 
 def projected_density(ax, pos, mass, *, extent, bins=300, axes=(0, 1), cmap="inferno", norm=None):

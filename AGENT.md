@@ -678,6 +678,13 @@ realization-fragile; fixed, plus an oracle memory fix and two deferrals logged:
 re-derived to 4.4985×10⁻¹²; circular-velocity sanity check 231.9 km/s for 10¹¹ M☉ at 8 kpc),
 config validation + YAML round-trip, `ruff` lint, and the overall scaffold/CI.
 
+Items from the **Stage 4 / 4B review (2026-06-22)** — paper-repro machinery; non-blocking:
+
+| ID | Area | Finding | Suggested action | Status |
+|---|---|---|---|---|
+| RV12 | Viz units (4B) | The density figures labeled the colorbar `Σ [M☉/kpc²]` but `viz/paper_repro._hist2d` returned mass *per bin*, not per kpc² (off by a constant ~1.4× at the default 300 bins over a 256 kpc box). The image is unaffected (LogNorm), but a paper-comparison figure should plot the labeled quantity. | Divide the histogram by the bin area so it is a true surface density. | ✅ **Done** (2026-06-22) — `_hist2d` divides by the (exact, from edges) bin area; label is now correct, image unchanged. |
+| RV13 | Tracer sampling (4C) | The Sun-like tracer path is recorded at `history_cadence`, so a smooth orbit needs a fine history cadence even when only a few *density* snapshots are wanted — the two samplings are coupled. | If 4C wants a smooth tracer path with sparse density snapshots, decouple by adding a separate `tracer_cadence` to `run_simulation`. Controllable today via `history_cadence`; only worth it if the coupling bites. | ⬜ Deferred (optional, 4C) |
+
 ---
 
 *Document status: architecture + staged plan, scoped with the owner on 2026-06-16 (decisions
