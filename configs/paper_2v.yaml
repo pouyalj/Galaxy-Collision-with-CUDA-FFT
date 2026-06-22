@@ -3,7 +3,7 @@
 # is a touch longer. Drives the figures via:
 #     paper-repro --config configs/paper_2v.yaml
 #
-# PRODUCTION SCALE (256^3, 10M particles, multigrid) — ~11 min on the M5 Pro CPU; snapshots
+# PRODUCTION SCALE (256^3, 10M particles, multigrid) — ~20 min on the M5 Pro CPU (measured); snapshots
 # to outputs/paper_2v/. For a quick look, drop grid_size to 160 and n_particles to ~5e5.
 name: paper-2v
 backend: cpu

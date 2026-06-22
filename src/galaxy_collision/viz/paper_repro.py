@@ -60,9 +60,10 @@ def projected_density(ax, pos, mass, *, extent, bins=300, axes=(0, 1), cmap="inf
     return im
 
 
-def density_sequence(snapshots, *, extent, bins=300, axes=(0, 1), cmap="inferno"):
-    """Row of projected-density panels at increasing times — the collision sequence figure. A
-    single shared log-norm (computed over all panels) makes brightness comparable across time."""
+def density_sequence(snapshots, *, extent, bins=300, axes=(0, 1), cmap="inferno", ncols=None):
+    """Projected-density panels at increasing times — the collision-sequence figure. Panels wrap
+    into a grid (default ``ncols ≈ √n``, so e.g. 9 panels become 3×3 rather than one ~29″ row); a
+    single shared log-norm over all panels makes brightness comparable across time."""
     from matplotlib.colors import LogNorm
 
     plt = _plt()
@@ -73,16 +74,24 @@ def density_sequence(snapshots, *, extent, bins=300, axes=(0, 1), cmap="inferno"
     norm = LogNorm(vmin=vmin, vmax=vmax)
 
     n = len(snapshots)
-    fig, axs = plt.subplots(1, n, figsize=(3.2 * n, 3.6), squeeze=False)
+    ncols = ncols or int(np.ceil(np.sqrt(n)))
+    nrows = int(np.ceil(n / ncols))
+    fig, axs = plt.subplots(nrows, ncols, figsize=(3.2 * ncols, 3.4 * nrows), squeeze=False)
+    flat = axs.ravel()
     im = None
-    for ax, h, snap in zip(axs[0], hists, snapshots, strict=True):
-        masked = np.ma.masked_where(h <= 0, h)
+    for k, ax in enumerate(flat):
+        if k >= n:
+            ax.set_visible(False)  # hide unused cells of a ragged grid
+            continue
+        masked = np.ma.masked_where(hists[k] <= 0, hists[k])
         im = ax.imshow(masked, origin="lower", extent=extent, cmap=cmap, norm=norm, aspect="equal")
-        ax.set_title(f"t = {snap.time:.0f} Myr")
-        ax.set_xlabel("x [kpc]")
-    axs[0][0].set_ylabel("y [kpc]")
+        ax.set_title(f"t = {snapshots[k].time:.0f} Myr")
+        if k + ncols >= n:  # x-label on every *visual* bottom-edge cell (nothing below it) —
+            ax.set_xlabel("x [kpc]")  # covers a ragged last row where cells beneath are hidden
+        if k % ncols == 0:  # y-labels only on the left column
+            ax.set_ylabel("y [kpc]")
     if im is not None:
-        fig.colorbar(im, ax=axs[0], fraction=0.018, pad=0.01, label=r"$\Sigma$ [M$_\odot$/kpc$^2$]")
+        fig.colorbar(im, ax=axs, fraction=0.018, pad=0.01, label=r"$\Sigma$ [M$_\odot$/kpc$^2$]")
     return fig
 
 

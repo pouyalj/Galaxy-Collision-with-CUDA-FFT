@@ -3,7 +3,7 @@
 # the collision. Drives the density-projection sequence + Sun-like tracer-path figures via:
 #     paper-repro --config configs/paper_4v.yaml
 #
-# PRODUCTION SCALE (256^3, 10M particles, multigrid) — ~10 min on the M5 Pro CPU; snapshots
+# PRODUCTION SCALE (256^3, 10M particles, multigrid) — ~18 min on the M5 Pro CPU (measured); snapshots
 # every 100 steps go to outputs/paper_4v/. For a quick look, drop grid_size to 160 and
 # n_particles to ~5e5 (or pass a smaller --config). D18: higher-fidelity headline figures.
 name: paper-4v

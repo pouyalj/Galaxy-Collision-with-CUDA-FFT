@@ -41,15 +41,20 @@
 - **State:** The original three near-duplicate CUDA C files (now archived under `legacy/`, see §3.1)
   compile against CUDA 9.2 + cuFFT + DISLIN on a specific 2020 lab machine. Several correctness and
   performance bugs (see §3.6) mean the headline configuration (M = 100,000,000 particles) will not
-  realistically run as written. **Modernization status:** Stages 0–3 are **done** — see §7. The
+  realistically run as written. **Modernization status:** Stages 0–**4** are **done** — see §7. The
   repo root hosts the `galaxy_collision` Python package with a scaffold, a tested (kpc, Myr, M☉)
   unit system, the SoA particle/grid data model, a reproducible two-galaxy IC generator
   (disk+bulge+central BH, 4v/2v), and — as of Stage 3 — a **correct CPU simulation**: CIC
   deposit/gather, both Poisson solvers (open-BC multigrid + the zero-padded FFT oracle, pulled
   forward from Stage 4), KDK leapfrog (grid-softened PM forces; explicit Plummer softening on the
-  direct/diagnostic path), fp64 conservation diagnostics, and
-  HDF5/npz snapshot I/O. It is validated by a stable Plummer sphere, a two-body Kepler orbit, and
-  multigrid-vs-oracle agreement.
+  direct/diagnostic path), fp64 conservation diagnostics, and HDF5/npz snapshot I/O. It is
+  validated by a stable Plummer sphere, a two-body Kepler orbit, and multigrid-vs-oracle agreement.
+  **Stage 4** added the validation hardening, the paper-reproduction machinery (Sun-like tracer +
+  the `paper-repro` figure CLI), and a **qualitative reproduction** of the paper's **4v/2v collision
+  figures** at 256³ / 10M particles on the M5 Pro CPU (`docs/paper_reproduction.md`) — the gross
+  outcome and the 4v↔2v contrast match, though cold-disk numerical heating is significant at this
+  resolution (the warm-disk fix is Stage 8) and there is no validated energy conservation at 10M.
+  Next: Stage 5 (CUDA scale-up).
 - **Goal (scoped):** Rebuild as **one portable source** (Taichi-style kernels compiling to
   CPU + CUDA + Metal), research-grade physics, **10–100M particles**, **Apple GPU as a
   first-class performance target**, with a **pluggable Poisson solver** (open-boundary multigrid
@@ -550,10 +555,10 @@ The full, shareable version of this plan — with per-stage objectives, tasks, d
 criteria — is in **`Galaxy_Collision_Modernization_Plan.docx`** (a generated artifact, gitignored;
 this section is the tracked source of truth).
 
-> **Current status (2026-06-21):** Stages 0–3 ✅ done. The FFT oracle was pulled forward into
-> Stage 3 (so multigrid is validated against it now). **Stage 4 in progress** (scope = D18) —
-> **4A ✅ done, 4B ✅ done** (machinery); 4C (production runs) next — structured as three review
-> checkpoints:
+> **Current status (2026-06-22):** Stages 0–**4** ✅ done. The FFT oracle was pulled forward into
+> Stage 3 (so multigrid is validated against it now). **Stage 4 complete** (scope = D18) —
+> **4A ✅, 4B ✅, 4C ✅** — the 4v & 2v collisions were run at 256³ / 10M particles and the paper's
+> headline figures reproduced (`docs/paper_reproduction.md`). The three checkpoints were:
 > - **4A — Validation hardening ✅:** principled multigrid≈oracle tolerance + analytic point-mass
 >   multigrid test (RV9); reconcile the 0.3 kpc IC velocity softening with the ~1 kpc grid
 >   softening so disks launch in equilibrium (§5.5); a big-run grid-energy diagnostic that omits
@@ -562,13 +567,18 @@ this section is the tracked source of truth).
 >   path recording (`run_simulation(tracer_indices=…)`); matplotlib density-projection sequence +
 >   tracer-trajectory figures (`viz/paper_repro.py`, the DISLIN `make_image` replacement, static
 >   only); the `paper-repro` CLI driver + `configs/paper_{4v,2v}.yaml`.
-> - **4C — Production runs + write-up:** 4v & 2v at 256³ / 10–30M particles, headline figures,
->   qualitative comparison to the 2020 paper; flip this row to ✅. **Validation bar (explicit):**
->   at 10–30M the O(N²) direct PE is infeasible, so 4C has **no hard energy-conservation gate** —
->   conservation rests on grid-energy *drift* (a monitor, not pass/fail; RV7/RV11) + the virial
->   trend. 4C validation is therefore **qualitative** (morphology figures + tracer path + virial
->   consistency), not a numeric energy gate. (A cold thin disk also heats/spreads over many t_dyn
->   in a PM code — mitigated by the chosen resolution; a warm disk is the Stage-8 fix, D16.)
+> - **4C — Production runs + write-up ✅:** ran 4v (400 Myr) & 2v (450 Myr) at 256³ / **10M**
+>   particles (~18–20 min/run on the M5 Pro) and *qualitatively* reproduced the paper's
+>   collision-sequence + tracer figures (`docs/paper_reproduction.md`). The 4v↔2v contrast is
+>   right: 4v is far less bound and **spreads into a large diffuse remnant** (T/|W|≈0.95, r_half
+>   46→12→60 kpc); 2v stays bound and compact (T/|W|≈0.5–0.7, r_half 46→14→31). **Honest scope:**
+>   both cold disks **heat substantially by first pericenter (~150 Myr)**, so the post-pericenter
+>   morphology is largely numerical heating, *not* crisp tidal tails — the figures are illustrative,
+>   not high-fidelity (warm disk = Stage-8, D16). **Validation bar (as set):** at this scale the
+>   O(N²) direct PE is infeasible, so there is **no hard energy gate** — "reproduced" means
+>   *qualitative* (morphology + tracer + the smooth virial trend), **not validated conservation**.
+>   Grid-PE drift is monitor-only and the headline 4v run has *no informative energy number* (60%,
+>   uninformative when E₀ nearly cancels); only the bound 2v carries a soft 7.6%.
 
 | Stage | Outcome | Backend | Exit gate | Status |
 |---|---|---|---|---|
@@ -576,7 +586,7 @@ this section is the tracked source of truth).
 | **1 — Units & data model** | Unit system (G) + SoA particle/grid fields | CPU | G unit test passes; config round-trips | ✅ **Done** (2026-06-16) |
 | **2 — Initial conditions** | Mass-derived N, disk+bulge sampling, central BH, 4v/2v setups | CPU | ICs match target mass/profile; reproducible from seed | ✅ **Done** (2026-06-16) |
 | **3 — CPU reference (anchor)** | A *correct* sim: CIC + open-BC multigrid + KDK + softening + diagnostics + I/O | CPU | Plummer stays stable; two-body Kepler matches; energy drift < threshold | ✅ **Done** (2026-06-20) |
-| **4 — Validation & FFT oracle** | Zero-padded isolated FFT (✅ done in Stage 3) + full test suite + paper reproduction | CPU/CUDA | Multigrid ≈ FFT within tolerance (✅ test 2 passing); paper figures reproduced (⬜) | 🟡 partial |
+| **4 — Validation & FFT oracle** | Zero-padded isolated FFT (✅ Stage 3) + validation hardening (4A) + paper-repro machinery (4B) + production 4v/2v runs & figures (4C) | CPU | Multigrid ≈ FFT within tolerance (✅); paper figures reproduced (✅ *qualitatively* — `docs/paper_reproduction.md`) | ✅ **Done** (2026-06-22) |
 | **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | ⬜ **Prereq:** a CUDA NVIDIA workstation + Taichi CUDA runtime is **not yet set up** (D7) — configure it together as the first task when Stage 5 begins, before any CUDA work |
 | **6 — Apple / Metal** | First-class Apple GPU, fp32 compute policy | Metal | Cross-backend parity (test 6); perf benchmark vs CUDA | ⬜ |
 | **7 — Visualization & output** | Realtime GGUI, batch→movie, paper figures, tracer particle | all | All four output modes working | ⬜ |

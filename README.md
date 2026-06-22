@@ -10,17 +10,18 @@ now being rebuilt as **one portable source** that runs on CPU, NVIDIA CUDA, and
 Apple-Silicon GPU via [Taichi](https://www.taichi-lang.org/), with research-grade
 physics at 10–100M particles.
 
-> **Status: Stages 0–3 done; Stage 4 in progress.** On top of the scaffold, config loader,
-> CI, units, SoA data model, and two-galaxy/Plummer initial conditions, there is a **correct
-> CPU simulation**: CIC deposit/gather, both Poisson solvers (open-boundary multigrid plus a
-> zero-padded FFT oracle), a KDK leapfrog with Plummer softening, fp64 conservation
-> diagnostics, and HDF5/npz snapshots — driven by `galaxy-sim`. It is validated by a stable
-> Plummer sphere, a two-body Kepler orbit, and multigrid-vs-oracle agreement. **Stage 4**
-> (validation hardening + paper reproduction) is underway — Checkpoints **4A** (principled
-> multigrid tolerances, disks launched in equilibrium with the grid's own measured rotation
-> curve, a big-run energy metric, a collision smoke test) and **4B** (a Sun-like tracer plus
-> the density-projection-sequence and tracer-path figures via the `paper-repro` CLI) are in;
-> the production 4v/2v runs are Checkpoint 4C. See [`AGENT.md`](AGENT.md) for the full
+> **Status: Stages 0–4 done.** On top of the scaffold, config loader, CI, units, SoA data
+> model, and two-galaxy/Plummer initial conditions, there is a **correct CPU simulation**: CIC
+> deposit/gather, both Poisson solvers (open-boundary multigrid plus a zero-padded FFT oracle),
+> a KDK leapfrog with Plummer softening, fp64 conservation diagnostics, and HDF5/npz snapshots
+> — driven by `galaxy-sim`. It is validated by a stable Plummer sphere, a two-body Kepler orbit,
+> and multigrid-vs-oracle agreement. **Stage 4** hardened that engine (principled solver
+> tolerances; disks launched in equilibrium with the grid's own measured rotation curve) and
+> **qualitatively reproduced the paper's headline figures** — the 4v & 2v Milky-Way × Andromeda
+> collisions at 256³ / 10M particles plus the Sun-like tracer path, via the `paper-repro` CLI
+> ([`docs/paper_reproduction.md`](docs/paper_reproduction.md); the gross outcome and 4v↔2v contrast
+> match, with significant cold-disk numerical heating at this resolution — a warm disk is a later
+> refinement). Next is Stage 5 (CUDA scale-up to 100M+). See [`AGENT.md`](AGENT.md) for the full
 > architecture and staged plan, and [`docs/development.md`](docs/development.md) to get started.
 
 ## Quickstart
