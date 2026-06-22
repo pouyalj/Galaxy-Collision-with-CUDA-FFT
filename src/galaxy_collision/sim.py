@@ -199,6 +199,8 @@ def run_simulation(
     solver_kwargs: dict[str, Any] | None = None,
     plummer_model=None,
     direct_pe_softening: float | None = None,
+    icr=None,
+    tracer_indices=None,
 ) -> dict[str, Any]:
     """Run the full PM N-body pipeline and return a summary (incl. a diagnostics history).
 
@@ -213,6 +215,11 @@ def run_simulation(
     using the exact O(N²) softened pair-sum PE. This is the *clean* conservation metric — it
     omits the grid PE's fluctuating CIC self-energy term — but is O(N²), so enable it only
     for small N (tests/validation), never for production-scale runs. Leave ``None`` otherwise.
+
+    ``icr`` overrides the built initial conditions with a pre-built :class:`ICResult` (the
+    paper-repro driver builds a tuned IC and selects a tracer first). ``tracer_indices`` is a
+    sequence of *global* particle indices whose positions are recorded each history sample and
+    returned as ``tracer_path`` (shape ``(n_samples, n_tracers, 3)``) — the Sun-like tracer path.
     """
     import numpy as np
     import taichi as ti
@@ -227,8 +234,21 @@ def run_simulation(
 
     backend = init_backend(config)
 
-    icr = _build_ic(config, plummer_model=plummer_model)
+    if icr is None:
+        icr = _build_ic(config, plummer_model=plummer_model)
+    elif icr.preset != config.ic_preset:
+        # Fail fast: a mismatched override would silently skip/misapply disk equilibration
+        # (gated on the preset) and mislabel the run summary.
+        raise ValueError(
+            f"icr.preset {icr.preset!r} disagrees with config.ic_preset {config.ic_preset!r}"
+        )
     n, gsize = icr.n, config.grid_size
+    if tracer_indices is None:
+        tracer_idx = None
+    elif isinstance(tracer_indices, (int, np.integer)):
+        tracer_idx = [int(tracer_indices)]  # tolerate a bare int for the single-tracer case
+    else:
+        tracer_idx = [int(i) for i in tracer_indices]
     _check_box_fit(icr, gsize)
     parts = ParticleState(n)
     ic_mod.load_into_particle_state(icr, parts)
@@ -298,6 +318,8 @@ def run_simulation(
             )
             rec["potential_direct"] = pe_d
             rec["energy_direct"] = ke + pe_d
+        if tracer_idx is not None:
+            rec["tracer_pos"] = pos[tracer_idx]  # (n_tracers, 3); fancy-index already copies
         return rec
 
     hist_cad = history_cadence or max(1, config.steps // 20)
@@ -357,6 +379,12 @@ def run_simulation(
         "energy_drift": drift,  # endpoint (first vs last sample)
         "energy_drift_max": drift_max,  # worst sample over the run
         "virial_final": history[-1]["virial"],  # supporting big-run conservation monitor (RV11)
+        # Sun-like tracer path: (n_samples, n_tracers, 3) positions + matching times (Myr).
+        "tracer_indices": tracer_idx,
+        "tracer_path": (
+            np.stack([h["tracer_pos"] for h in history]) if tracer_idx is not None else None
+        ),
+        "tracer_times": np.array([h["time"] for h in history]) if tracer_idx is not None else None,
         "history": history,
         "snapshots": snapshots,
         "status": "ok",

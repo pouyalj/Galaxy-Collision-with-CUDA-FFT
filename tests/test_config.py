@@ -68,6 +68,9 @@ def test_resolve_n_none():
         {"steps": -1},
         {"grid_size": 0},
         {"output_cadence": -1},
+        {"separation": 0.0},
+        {"separation": -10.0},
+        {"impact_parameter": -1.0},
     ],
 )
 def test_invalid_configs_rejected(kwargs):

@@ -12,12 +12,15 @@ import pytest
 from galaxy_collision import units
 from galaxy_collision.config import GALAXY_MASS_MSUN, SimConfig
 from galaxy_collision.ic import (
+    COMPONENT_BH,
+    COMPONENT_DISK,
     V_APPROACH,
     GalaxyModel,
     _circular_velocity,
     _disk_tables,
     _sample_disk,
     build_ic,
+    select_tracer,
 )
 
 
@@ -145,6 +148,31 @@ def test_4v_faster_than_2v():
     cl_fast = fast.vel[fast.gid == 0, 0].mean() - fast.vel[fast.gid == 1, 0].mean()
     cl_slow = slow.vel[slow.gid == 0, 0].mean() - slow.vel[slow.gid == 1, 0].mean()
     assert np.isclose(cl_fast / cl_slow, 2.0, rtol=0.05)
+
+
+# --- Sun-like tracer (Stage 4 / 4B) ---------------------------------------------
+
+
+def test_select_tracer_is_disk_particle_near_target_radius():
+    ic = build_ic(_cfg(n_particles=20000))
+    idx = select_tracer(ic, target_radius=8.32, gid=0)
+    assert ic.gid[idx] == 0
+    assert ic.component[idx] == COMPONENT_DISK
+    # Its in-disk galactocentric radius about galaxy 0's BH is close to the target. With ~9000
+    # disk particles spanning 25 kpc, the nearest one sits well within 1 kpc of 8.32.
+    bh = (ic.gid == 0) & (ic.component == COMPONENT_BH)
+    c = ic.pos[bh][0]
+    r = np.hypot(ic.pos[idx, 0] - c[0], ic.pos[idx, 1] - c[1])
+    assert abs(r - 8.32) < 1.0, r
+
+
+def test_select_tracer_requires_component_tag():
+    from galaxy_collision.ic import ICResult
+
+    bare = ICResult(pos=np.zeros((3, 3)), vel=np.zeros((3, 3)), mass=np.ones(3),
+                    gid=np.zeros(3, np.int32), preset="plummer", particle_mass=1.0)
+    with pytest.raises(ValueError, match="component"):
+        select_tracer(bare)
 
 
 # --- Output shape & guards ------------------------------------------------------

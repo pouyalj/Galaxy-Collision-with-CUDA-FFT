@@ -45,7 +45,7 @@ src/galaxy_collision/
   data.py          SoA particle/grid fields + memory estimator (Stage 1)
   ic.py            two-galaxy initial conditions (Stage 2)
   solver/          Poisson solvers — multigrid + FFT oracle (Stage 3+)
-  viz/             realtime / movie / paper-repro output (Stage 7)
+  viz/             paper_repro static figures (Stage 4/4B); realtime GGUI + movie (Stage 7)
 configs/           YAML run configs (smoke.yaml is the baseline)
 tests/             pytest suite
 legacy/            the original 2020 CUDA .cu files, preserved for reference

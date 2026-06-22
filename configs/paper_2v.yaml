@@ -1,0 +1,20 @@
+# Stage-4 paper reproduction — the 2v run (paper run 2, terminated at 45e7 yr ≈ 450 Myr).
+# Same setup as paper_4v but half the closing speed, so the encounter is slower and the run
+# is a touch longer. Drives the figures via:
+#     paper-repro --config configs/paper_2v.yaml
+#
+# PRODUCTION SCALE (256^3, 10M particles, multigrid) — ~11 min on the M5 Pro CPU; snapshots
+# to outputs/paper_2v/. For a quick look, drop grid_size to 160 and n_particles to ~5e5.
+name: paper-2v
+backend: cpu
+ic_preset: two_galaxy_2v
+solver: multigrid
+grid_size: 256
+separation: 90.0        # initial center-to-center distance (kpc) — galaxies at 128 ± 45
+impact_parameter: 0.0   # head-on; raise for a grazing encounter
+n_particles: 10000000
+dt: 0.5
+steps: 900              # 900 * 0.5 = 450 Myr ≈ the paper's run-2 termination
+output_cadence: 100     # 10 snapshots for the density sequence
+output_dir: outputs/paper_2v
+seed: 0

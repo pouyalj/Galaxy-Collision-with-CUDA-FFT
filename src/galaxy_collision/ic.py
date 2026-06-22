@@ -525,6 +525,35 @@ def equilibrate_disk_velocities(
     return curves
 
 
+def select_tracer(icr: ICResult, target_radius: float = 8.32, gid: int = 0) -> int:
+    """Global index of galaxy ``gid``'s disk particle nearest ``target_radius`` kpc (in-disk
+    cylindrical galactocentric radius) — the paper's Sun-like tracer.
+
+    The paper tracks a single ~840 M☉ "Sun-like" particle at galactocentric radius 8.32 kpc; we
+    *track an existing* disk particle (uniform-mass run), not insert a special-mass one. Needs the
+    ``component`` tag (two-galaxy IC).
+    """
+    if icr.component is None:
+        raise ValueError("select_tracer needs ICResult.component (two-galaxy IC)")
+    disk = (icr.gid == gid) & (icr.component == COMPONENT_DISK)
+    idx = np.where(disk)[0]
+    if idx.size == 0:
+        raise ValueError(f"no disk particles for galaxy {gid}")
+    bh = (icr.gid == gid) & (icr.component == COMPONENT_BH)
+    center = icr.pos[bh][0] if np.any(bh) else icr.pos[idx].mean(axis=0)
+    r = np.hypot(icr.pos[idx, 0] - center[0], icr.pos[idx, 1] - center[1])
+    pick = int(np.argmin(np.abs(r - target_radius)))
+    if abs(r[pick] - target_radius) > 2.0:  # request unsatisfiable (e.g. beyond the disk edge)
+        import warnings
+
+        warnings.warn(
+            f"select_tracer: nearest disk particle is at {r[pick]:.1f} kpc, far from the "
+            f"requested {target_radius:.1f} kpc (disk spans ~{r.min():.1f}–{r.max():.1f} kpc).",
+            stacklevel=2,
+        )
+    return int(idx[pick])
+
+
 def load_into_particle_state(ic: ICResult, parts) -> None:
     """Copy an :class:`ICResult` into an allocated Taichi ``ParticleState``."""
     if parts.n != ic.n:
@@ -547,6 +576,7 @@ __all__ = [
     "build_plummer_ic",
     "load_into_particle_state",
     "equilibrate_disk_velocities",
+    "select_tracer",
     "COMPONENT_DISK",
     "COMPONENT_BULGE",
     "COMPONENT_BH",

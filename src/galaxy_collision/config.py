@@ -55,6 +55,12 @@ class SimConfig:
     solver: str = "multigrid"
     grid_size: int = 256  # cells per side; box is grid_size kpc, 1 kpc^3 cells
 
+    # Two-galaxy geometry (used only by the two_galaxy_* presets): initial center-to-center
+    # separation and perpendicular impact parameter, in kpc. Keeps a run fully reproducible
+    # from its YAML (the paper-repro driver reads these).
+    separation: float = 90.0
+    impact_parameter: float = 0.0
+
     # Output.
     output_cadence: int = 0  # steps between snapshots; 0 disables output
     output_dir: str = "outputs"
@@ -86,6 +92,10 @@ class SimConfig:
             raise ConfigError(f"steps must be non-negative, got {self.steps}")
         if self.grid_size <= 0:
             raise ConfigError(f"grid_size must be positive, got {self.grid_size}")
+        if self.separation <= 0:
+            raise ConfigError(f"separation must be positive, got {self.separation}")
+        if self.impact_parameter < 0:
+            raise ConfigError(f"impact_parameter must be non-negative, got {self.impact_parameter}")
         if self.output_cadence < 0:
             raise ConfigError(f"output_cadence must be non-negative, got {self.output_cadence}")
 

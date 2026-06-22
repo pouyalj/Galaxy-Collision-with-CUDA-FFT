@@ -1,0 +1,21 @@
+# Stage-4 paper reproduction — the 4v run (paper run 1, terminated at 40e7 yr ≈ 400 Myr).
+# Two galaxies start 90 kpc apart closing at 4× the measured approach speed, evolved through
+# the collision. Drives the density-projection sequence + Sun-like tracer-path figures via:
+#     paper-repro --config configs/paper_4v.yaml
+#
+# PRODUCTION SCALE (256^3, 10M particles, multigrid) — ~10 min on the M5 Pro CPU; snapshots
+# every 100 steps go to outputs/paper_4v/. For a quick look, drop grid_size to 160 and
+# n_particles to ~5e5 (or pass a smaller --config). D18: higher-fidelity headline figures.
+name: paper-4v
+backend: cpu
+ic_preset: two_galaxy_4v
+solver: multigrid       # portable open-BC default (D5); FFT oracle is the spot-check
+grid_size: 256          # 256 kpc box, 1 kpc^3 cells (the paper's grid)
+separation: 90.0        # initial center-to-center distance (kpc) — galaxies at 128 ± 45
+impact_parameter: 0.0   # head-on; raise for a grazing encounter
+n_particles: 10000000   # ~5M/galaxy; bump toward 30M for publication-grade maps (D18)
+dt: 0.5                 # Myr
+steps: 800              # 800 * 0.5 = 400 Myr ≈ the paper's run-1 termination
+output_cadence: 100     # 9 snapshots (steps 0,100,...,800) for the density sequence
+output_dir: outputs/paper_4v
+seed: 0

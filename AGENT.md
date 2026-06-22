@@ -67,7 +67,8 @@
 - Two runs in the paper: initial approach speed **4v** and **2v**, where v ≈ 125,000 mph is the
   measured approach speed (~402,000 km/h). Run 1 terminated at 40×10⁷ yr; run 2 at 45×10⁷ yr.
 - A single "Sun-like" tracer particle (mass 840 M☉, initial galactocentric radius 8.32 kpc) is
-  tracked through the collision.
+  tracked through the collision. (Our uniform-mass reproduction tracks an *existing* disk particle
+  nearest 8.32 kpc rather than an 840 M☉ insert — see §3.7.)
 - **Known physical shortcomings acknowledged in the paper:** galaxies render as *squares* (crude
   mass deposition / no interpolation), density visibly *dissipates over time* (numerical heating
   + wrong boundary conditions), no gas, and dark matter / central black holes contribute *force
@@ -116,7 +117,7 @@ GalaxyCollision/
     │   ├── diagnostics.py              # energy/momentum/Lagrangian-radius, fp64 (Stage 3)
     │   ├── io.py                       # HDF5/npz snapshot I/O (Stage 3)
     │   ├── solver/                     # base + multigrid (open-BC) + fft_oracle (Stage 3)
-    │   └── viz/                        # visualization — placeholder (Stage 7)
+    │   └── viz/                        # paper_repro static figures (Stage 4/4B); GGUI/movie = Stage 7
     ├── tests/                          # config/hello_sim/units/data/ic/deposit/solver_*/integrator/io/sim
     ├── docs/development.md             # contributor quickstart
     └── legacy/                         # original 2020 CUDA source, preserved for reference
@@ -251,8 +252,11 @@ nvcc final_draft1.cu -Xcompiler -fopenmp \
 - Paper implies particle counts from physical masses (2.32×10¹¹ M☉ ÷ 840 M☉ ≈ 2.8×10⁸ per galaxy);
   code hard-codes M = 1×10⁸ total. Counts/masses are inconsistent — pick a documented convention.
 - Paper's surface-density law (Gaia-derived, Eq. 1: Σ(r)=Σ₀ℓc/√((r−rb)²+ℓc²), rb=2 kpc, ℓc=2.5 kpc,
-  Σ₀≈611 M☉/pc²) is **not** what the code samples; the code uses uniform-in-disk radial rings.
-  Research-grade ICs should sample the actual profile (§5.5).
+  Σ₀≈611 M☉/pc²) is **not** what the legacy code samples; *it* used uniform-in-disk radial rings.
+  (The modernized IC generator *does* sample Eq. 1's shape — §5.5, D16 — so this is a legacy-only gap.)
+- **Tracer particle (Stage 4 / 4B):** the paper tracks a special ~840 M☉ "Sun-like" particle at 8.32 kpc.
+  Our run is uniform-mass, so `ic.select_tracer` *tracks an existing disk particle* nearest 8.32 kpc
+  rather than inserting a distinct-mass one — the trajectory is what reproduces, not the tracer's mass.
 
 ---
 
@@ -480,7 +484,8 @@ portable (the one thing a plain FFT is not under Taichi) and physically correct 
 > **Stages 0–3 realized this layout** (see §3.1 for what exists on disk today): `pyproject.toml`,
 > `configs/`, `src/galaxy_collision/{config,sim,units,data,ic,deposit,integrator,diagnostics,io}.py`,
 > the `solver/` package (`base` + `multigrid` + `fft_oracle`), `tests/`, `docs/`, and `legacy/`.
-> The only remaining placeholder is `viz/` (Stage 7).
+> Stage 4 / 4B added `viz/paper_repro.py` (static paper-reproduction figures + the `paper-repro`
+> CLI); the remaining `viz/` placeholder is the Stage-7 realtime GGUI viewer + ffmpeg movie path.
 
 ```
 galaxy_collision/
@@ -546,15 +551,17 @@ criteria — is in **`Galaxy_Collision_Modernization_Plan.docx`** (a generated a
 this section is the tracked source of truth).
 
 > **Current status (2026-06-21):** Stages 0–3 ✅ done. The FFT oracle was pulled forward into
-> Stage 3 (so multigrid is validated against it now). **Stage 4 in progress** (scope = D18),
-> structured as three review checkpoints:
-> - **4A — Validation hardening:** principled multigrid≈oracle tolerance + analytic point-mass
+> Stage 3 (so multigrid is validated against it now). **Stage 4 in progress** (scope = D18) —
+> **4A ✅ done, 4B ✅ done** (machinery); 4C (production runs) next — structured as three review
+> checkpoints:
+> - **4A — Validation hardening ✅:** principled multigrid≈oracle tolerance + analytic point-mass
 >   multigrid test (RV9); reconcile the 0.3 kpc IC velocity softening with the ~1 kpc grid
 >   softening so disks launch in equilibrium (§5.5); a big-run grid-energy diagnostic that omits
 >   the CIC self-energy offset (RV11); two-galaxy integration smoke test.
-> - **4B — Repro machinery:** Sun-like tracer particle (~8.32 kpc galactocentric) + path
->   recording; matplotlib density-projection figures (the DISLIN `make_image` replacement, static
->   only); tracer-trajectory plot; a `paper_repro` config + driver.
+> - **4B — Repro machinery ✅:** Sun-like tracer particle (~8.32 kpc galactocentric) selection +
+>   path recording (`run_simulation(tracer_indices=…)`); matplotlib density-projection sequence +
+>   tracer-trajectory figures (`viz/paper_repro.py`, the DISLIN `make_image` replacement, static
+>   only); the `paper-repro` CLI driver + `configs/paper_{4v,2v}.yaml`.
 > - **4C — Production runs + write-up:** 4v & 2v at 256³ / 10–30M particles, headline figures,
 >   qualitative comparison to the 2020 paper; flip this row to ✅. **Validation bar (explicit):**
 >   at 10–30M the O(N²) direct PE is infeasible, so 4C has **no hard energy-conservation gate** —

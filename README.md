@@ -16,11 +16,12 @@ physics at 10–100M particles.
 > zero-padded FFT oracle), a KDK leapfrog with Plummer softening, fp64 conservation
 > diagnostics, and HDF5/npz snapshots — driven by `galaxy-sim`. It is validated by a stable
 > Plummer sphere, a two-body Kepler orbit, and multigrid-vs-oracle agreement. **Stage 4**
-> (validation hardening + paper reproduction) is underway — Checkpoint **4A** is in:
-> principled multigrid tolerances, disks launched in equilibrium with the grid's own measured
-> rotation curve, a big-run energy metric, and a two-galaxy collision smoke test. See
-> [`AGENT.md`](AGENT.md) for the full architecture and staged plan, and
-> [`docs/development.md`](docs/development.md) to get started.
+> (validation hardening + paper reproduction) is underway — Checkpoints **4A** (principled
+> multigrid tolerances, disks launched in equilibrium with the grid's own measured rotation
+> curve, a big-run energy metric, a collision smoke test) and **4B** (a Sun-like tracer plus
+> the density-projection-sequence and tracer-path figures via the `paper-repro` CLI) are in;
+> the production 4v/2v runs are Checkpoint 4C. See [`AGENT.md`](AGENT.md) for the full
+> architecture and staged plan, and [`docs/development.md`](docs/development.md) to get started.
 
 ## Quickstart
 
@@ -29,6 +30,7 @@ python3.11 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 hello-sim                                  # no-op smoke simulation on CPU
 galaxy-sim --config configs/plummer.yaml   # real PM N-body run (a Plummer sphere)
+paper-repro --config configs/paper_4v.yaml # two-galaxy collision -> paper figures (heavy; see config)
 pytest                                     # run the test suite
 ```
 
