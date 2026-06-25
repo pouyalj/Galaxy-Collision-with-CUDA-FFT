@@ -75,6 +75,19 @@ galaxy-view --config configs/paper_4v.yaml --backend metal  # watch it collide l
 galaxy-movie --config configs/paper_4v.yaml --out collision.mp4   # render a collision movie
 ```
 
+**Watch a headless run in your browser** (e.g. the sim on a remote GPU box, viewed from your laptop):
+
+```bash
+# 1) on the headless box — stream the live collision over HTTP (no display needed):
+galaxy-serve --config configs/paper_4v.yaml --backend cuda          # serves on localhost:8080
+
+# 2) on your laptop — tunnel the port over SSH, then open the link in any browser:
+ssh -N -L 8080:localhost:8080 user@gpu-box                          # then visit http://localhost:8080
+```
+
+The browser page shows the live density projection with pause / speed / projection-plane buttons.
+(`galaxy-serve` and `galaxy-movie` need the `viz` extra; `galaxy-view` needs a local display.)
+
 Every run prints the **device it actually ran on** and warns loudly if a requested GPU backend
 silently fell back to CPU.
 
