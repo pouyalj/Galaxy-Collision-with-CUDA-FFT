@@ -59,8 +59,10 @@
   (5B; adaptive warm-start V-cycling + a thread-local moment-reduction fix cut the solve ~13×;
   deposit tuning D19 closed by measurement), the FFT oracle gained a CuPy/cuFFT GPU path (5C, D21),
   and the **100M-particle headline collision** ran on the 8 GB card (5C, D20: 800 steps/400 Myr,
-  3.86 steps/s, 6491 MiB peak). Suite green on CPU **and** CUDA. Next: Stage 6 (Apple/Metal) —
-  where the f64 device reductions need an fp32/Kahan path (RV15). Plan: `docs/stage5_plan.md`.
+  3.86 steps/s, 6491 MiB peak). Suite green on CPU **and** CUDA. **Stage 6 (Apple/Metal) in progress
+  — 6A ✅:** the f64 device reductions got a Kahan-fp32 path for fp64-less Metal (RV15 closed), the
+  whole pipeline runs on `arch=metal`, test 6 (CPU↔CUDA↔Metal parity) is complete, suite green on
+  CPU + Metal (123). Next: 6B (deposit spike + benchmark). Plan: `docs/stage6_plan.md` (D22–D24).
 - **Goal (scoped):** Rebuild as **one portable source** (Taichi-style kernels compiling to
   CPU + CUDA + Metal), research-grade physics, **10–100M particles**, **Apple GPU as a
   first-class performance target**, with a **pluggable Poisson solver** (open-boundary multigrid
@@ -581,7 +583,10 @@ this section is the tracked source of truth).
 > the force chain is device-resident, the multigrid solve was tuned for **6.5–12.5× throughput**
 > (adaptive warm-start V-cycling + a thread-local moment-reduction fix; `docs/performance.md`), the
 > FFT oracle gained a CuPy/cuFFT GPU path, and the **100M-particle headline collision** ran on the
-> 8 GB RTX 3070 (3.86 steps/s, 6491 MiB peak). Suite green on CPU and CUDA. Next: Stage 6 (Metal).
+> 8 GB RTX 3070 (3.86 steps/s, 6491 MiB peak). Suite green on CPU and CUDA. **Stage 6 (Metal) in
+> progress — 6A ✅** (2026-06-25): the device reductions gained a Kahan-fp32 path for fp64-less
+> Metal (RV15 closed), the whole PM pipeline runs on `arch=metal`, test 6 (CPU↔CUDA↔Metal parity)
+> is complete, and the suite is green on CPU and Metal (123). Next: 6B (deposit spike + benchmark).
 > The FFT oracle was pulled forward into Stage 3 (so multigrid is validated against it now).
 > **Stage 4 complete** (scope = D18) —
 > **4A ✅, 4B ✅, 4C ✅** — the 4v & 2v collisions were run at 256³ / 10M particles and the paper's
@@ -615,7 +620,7 @@ this section is the tracked source of truth).
 | **3 — CPU reference (anchor)** | A *correct* sim: CIC + open-BC multigrid + KDK + softening + diagnostics + I/O | CPU | Plummer stays stable; two-body Kepler matches; energy drift < threshold | ✅ **Done** (2026-06-20) |
 | **4 — Validation & FFT oracle** | Zero-padded isolated FFT (✅ Stage 3) + validation hardening (4A) + paper-repro machinery (4B) + production 4v/2v runs & figures (4C) | CPU | Multigrid ≈ FFT within tolerance (✅); paper figures reproduced (✅ *qualitatively* — `docs/paper_reproduction.md`) | ✅ **Done** (2026-06-22) |
 | **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | ✅ **Done** (2026-06-25). RTX 3070 8 GB (`docs/gpu_setup.md`); checkpoints 5A→5C (`docs/stage5_plan.md`, D19–D21). **5A** device-resident force chain (RV6, RV10). **5B** profiler + benchmark (`docs/performance.md`): **6.5–12.5× throughput** via adaptive warm-start V-cycling + a TLS moment-reduction fix (solve ~13×; RV5); D19 closed by measurement. **5C** CuPy/cuFFT GPU oracle (D21, validates multigrid at 256³) + the **100M headline run** (D20: 800 steps/400 Myr, 3.86 steps/s, peak 6491 MiB/8192 — fits). Suite green on CPU **and** CUDA. |
-| **6 — Apple / Metal** | First-class Apple GPU, fp32 compute policy | Metal | Cross-backend parity (test 6); perf benchmark vs CUDA | ⬜ |
+| **6 — Apple / Metal** | First-class Apple GPU, fp32 compute policy | Metal | Cross-backend parity (test 6); perf benchmark vs CUDA | 🔄 **In progress** (plan: `docs/stage6_plan.md`, D22–D24). **6A ✅** (2026-06-25) — Kahan-fp32 reduction path for fp64-less Metal (RV15 closed), whole pipeline runs on `arch=metal`, **test 6 complete** (CPU↔CUDA↔Metal parity), suite green CPU+Metal (123). Next: **6B** (CIC deposit spike + benchmark), **6C** (100M run + CUDA-vs-Metal write-up). |
 | **7 — Visualization & output** | Realtime GGUI, batch→movie, paper figures, tracer particle | all | All four output modes working | ⬜ (incl. a **100M density-projection panel** — the 5C 100M run was a perf/scale demo validated by diagnostics, no image yet) |
 | **8 — Research campaigns** | 4v/2v studies, central-BH experiments, longer runs | all | Reproduce + extend 2020 results (future hooks: DM halo, TreePM) | ⬜ |
 
@@ -727,7 +732,7 @@ Items from **Stage 5 / 5A (2026-06-25)** — device-residency work; non-blocking
 | ID | Area | Finding | Suggested action | Status |
 |---|---|---|---|---|
 | RV14 | Doc ↔ code (memory) | §5.2's tables count the SoA at 32 B/particle but omit the **three per-particle accel fields** (`acc_x/y/z`, +12 B) that `run_simulation` allocates, so the realized footprint is ~44 B/particle and live peaks exceed the table (100M ≈ ~5.5 GB, not ~3.8 GB). | Note the live footprint in §5.2 and use it to size the 100M run. | ✅ **Done** (2026-06-25, 5A) — §5.2 footnote added; full live budget in `docs/stage5_plan.md` §4 (D20). |
-| RV15 | fp64 portability (Stage 6) | The Stage-5 device reductions (`multigrid._moments_device`, `diagnostics_device`) accumulate in **f64**, which Metal lacks. Correct on CUDA/CPU; a no-op risk until Metal. | At Stage 6 provide a Kahan-fp32 reduction path (already flagged in D6 and both modules' docstrings). | ⬜ Deferred to Stage 6 |
+| RV15 | fp64 portability (Stage 6) | The Stage-5 device reductions (`multigrid._moments_device`, `diagnostics_device`) accumulate in **f64**, which Metal lacks. Correct on CUDA/CPU; a no-op risk until Metal. | At Stage 6 provide a Kahan-fp32 reduction path (already flagged in D6 and both modules' docstrings). | ✅ **Done** (2026-06-25, Stage 6/6A) — confirmed f64 is a hard compile error on Metal (`Type f64 not supported`). Added `backend.supports_fp64()`; the boundary moments, L2 norms, particle/grid diagnostics now branch to a **Kahan-compensated fp32** path on Metal (`_accumulate_moments_kahan`, `_sum_squares_kahan`, `_reduce_{particle_scalars,grid_pe}_kahan`, fp32 histogram), finished in host fp64. CPU/CUDA f64 path unchanged. Measured vs the fp64 reference: moments ~5e-8, KE ~3e-10, grid-PE ~4e-9 rel. (plain fp32 was ~1e-3 — Kahan is load-bearing). Full suite green on CPU **and** Metal (123). |
 
 Items from **Stage 5 / 5B (2026-06-25)** — profiling + tuning:
 

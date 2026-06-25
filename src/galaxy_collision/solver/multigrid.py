@@ -25,15 +25,17 @@ The boundary moments (M, center of mass, quadrupole) are reduced **on the device
 raw sums (M, Σm·r, Σm·rₐr_b) into a tiny f64 buffer, and only those 10 scalars cross to
 the host for the cheap center-of-mass / second-moment arithmetic. This removes the
 per-step full-grid ``rho.to_numpy()`` copy the Stage-3 reference did (legacy bug #13).
-The f64 accumulation is CUDA/CPU-only; a Metal-safe fp32/Kahan reduction is a Stage-6
-concern (Metal has no hardware fp64). The pure-NumPy ``_moments`` is retained as the
-reference the device path is unit-tested against.
+The f64 accumulation runs on CPU/CUDA; Metal has no hardware fp64, so there it uses a
+**Kahan-compensated fp32** reduction instead (``_accumulate_moments_kahan``, selected via
+``backend.supports_fp64`` — Stage 6 / RV15, D22). The pure-NumPy ``_moments`` is retained
+as the reference both device paths are unit-tested against.
 """
 
 import numpy as np
 import taichi as ti
 
 from galaxy_collision import units
+from galaxy_collision.backend import supports_fp64
 from galaxy_collision.solver.base import PoissonSolver
 
 # See deposit.py: PEP 563 would stringize the ti.template() annotations below.
@@ -145,8 +147,8 @@ def _accumulate_moments(
     thread-local-storage reduction only fires for reductions into a *0-D scalar* field
     (``m[None] += …``). Reducing into an *indexed* element (``out[c] += …``) falls back to
     global atomics, and 256³ cells contending on a handful of addresses cost ~175 ms here
-    (vs ~4 ms with TLS) — measured. f64 keeps the ~1.7e7-cell sum accurate (CUDA/CPU only;
-    Metal = Stage 6, see the module docstring).
+    (vs ~4 ms with TLS) — measured. f64 keeps the ~1.7e7-cell sum accurate (CPU/CUDA; the
+    Metal fp32 path is :func:`_accumulate_moments_kahan`, see the module docstring).
     """
     m0[None] = 0.0
     m1[None] = 0.0
@@ -185,6 +187,54 @@ def _sum_squares(field: ti.template(), out: ti.template()):
     out[None] = 0.0
     for idx in ti.grouped(field):
         out[None] += ti.cast(field[idx], ti.f64) ** 2
+
+
+@ti.kernel
+def _accumulate_moments_kahan(rho: ti.template(), n: ti.i32, dx: ti.f32, part: ti.template()):
+    """Kahan-fp32 reduction of the 10 raw moments, for fp64-less backends (Metal, RV15/D22).
+
+    Same moments as :func:`_accumulate_moments`, but f64 is illegal on Metal. Parallelizes
+    over the ``(i,j)`` column (``n²`` lanes, division-free); each lane Kahan-sums its ``n``
+    cells along ``k`` into ten fp32 partials at ``part[c,i,j]``, with a running compensation
+    term that recovers the bits a naive fp32 sum drops. The host finishes the ``n²→1`` sum in
+    fp64 (a tiny fixed copy, never a full-grid round-trip). Measured ~5e-8 rel. error at 256³
+    vs ~1e-3 naive fp32 (``docs/stage6_plan.md`` 6A)."""
+    vol = dx * dx * dx
+    for i, j in ti.ndrange(n, n):
+        s = ti.Vector.zero(ti.f32, 10)
+        c = ti.Vector.zero(ti.f32, 10)
+        x = ti.cast(i, ti.f32) * dx
+        y = ti.cast(j, ti.f32) * dx
+        for k in range(n):
+            z = ti.cast(k, ti.f32) * dx
+            m = rho[i, j, k] * vol
+            v = ti.Vector([m, m * x, m * y, m * z, m * x * x, m * y * y,
+                           m * z * z, m * x * y, m * x * z, m * y * z])
+            yk = v - c       # Kahan: subtract carried compensation
+            t = s + yk
+            c = (t - s) - yk  # new compensation = (sum error this step)
+            s = t
+        for cc in ti.static(range(10)):
+            part[cc, i, j] = s[cc]
+
+
+@ti.kernel
+def _sum_squares_kahan(field: ti.template(), n: ti.i32, part: ti.template()):
+    """Kahan-fp32 Σ field² over a cubic ``(n,n,n)`` field, for fp64-less backends (Metal).
+
+    The fp32 counterpart of :func:`_sum_squares`. Parallelizes over the ``(i,j)`` column;
+    each lane Kahan-sums the ``n`` squares along ``k`` into ``part[i,j]``; the host finishes
+    the ``n²→1`` sum in fp64. Both call sites operate on the finest grid, so cubic is safe."""
+    for i, j in ti.ndrange(n, n):
+        s = 0.0
+        c = 0.0
+        for k in range(n):
+            v = field[i, j, k] * field[i, j, k]
+            yk = v - c
+            t = s + yk
+            c = (t - s) - yk
+            s = t
+        part[i, j] = s
 
 
 @ti.kernel
@@ -287,12 +337,21 @@ class MultigridPoissonSolver(PoissonSolver):
         self.rhs = [ti.field(ti.f32, shape=(s, s, s)) for s in sizes]
         self.res = [ti.field(ti.f32, shape=(s, s, s)) for s in sizes]
 
-        # Ten 0-D f64 accumulators for the raw boundary moments (RV6a). 0-D (not a length-10
-        # field) so each reduction gets Taichi's thread-local optimization — see
-        # _accumulate_moments. CUDA/CPU only (Metal = Stage 6).
-        self._mom = tuple(ti.field(ti.f64, shape=()) for _ in range(10))
-        # 0-D f64 scratch for the device L2-norm reductions used by adaptive cycling.
-        self._sq_buf = ti.field(ti.f64, shape=())
+        # Boundary-moment + L2-norm reductions pick their path from the backend's fp64
+        # support (Stage 6 / RV15, D22): f64 thread-local reductions on CPU/CUDA (unchanged),
+        # a Kahan-compensated fp32 reduction on Metal (no hardware fp64).
+        self._fp64 = supports_fp64()
+        if self._fp64:
+            # Ten 0-D f64 accumulators for the raw boundary moments (RV6a). 0-D (not a
+            # length-10 field) so each reduction gets Taichi's thread-local optimization —
+            # see _accumulate_moments. Plus a 0-D f64 scratch for the L2-norm reductions.
+            self._mom = tuple(ti.field(ti.f64, shape=()) for _ in range(10))
+            self._sq_buf = ti.field(ti.f64, shape=())
+        else:
+            # Metal: (i,j)-column fp32 partials, finished in host fp64 (_accumulate_moments_kahan
+            # / _sum_squares_kahan). part shape is grid-bound, not N-bound — a tiny fixed copy.
+            self._mom_part = ti.field(ti.f32, shape=(10, grid_size, grid_size))
+            self._sq_part = ti.field(ti.f32, shape=(grid_size, grid_size))
 
     # --- boundary moments -------------------------------------------------------
 
@@ -303,8 +362,13 @@ class MultigridPoissonSolver(PoissonSolver):
         :meth:`_moments`, but reduces on the device and copies only 10 scalars to the host —
         no per-step full-grid ``to_numpy``.
         """
-        _accumulate_moments(rho, self.grid_size, self.dx, *self._mom)
-        s = [float(m[None]) for m in self._mom]  # 10 f64 scalars to host
+        if self._fp64:
+            _accumulate_moments(rho, self.grid_size, self.dx, *self._mom)
+            s = [float(m[None]) for m in self._mom]  # 10 f64 scalars to host
+        else:
+            # Metal: fp32 column partials, summed across columns in host fp64 (RV15/D22).
+            _accumulate_moments_kahan(rho, self.grid_size, self.dx, self._mom_part)
+            s = self._mom_part.to_numpy().reshape(10, -1).astype(np.float64).sum(axis=1).tolist()
         total = s[0]
         if total <= 0.0:
             return 0.0, (0.0, 0.0, 0.0), (0.0,) * 6
@@ -370,9 +434,15 @@ class MultigridPoissonSolver(PoissonSolver):
         self._smooth(level, self.nu2)
 
     def _l2_device(self, field) -> float:
-        """L2 norm of ``field`` via a device sum-of-squares reduction (one scalar to host)."""
-        _sum_squares(field, self._sq_buf)
-        return float(self._sq_buf[None]) ** 0.5
+        """L2 norm of ``field`` via a device sum-of-squares reduction.
+
+        f64 thread-local reduction (one scalar to host) on CPU/CUDA; a Kahan-fp32 column
+        reduction finished in host fp64 on Metal (RV15/D22)."""
+        if self._fp64:
+            _sum_squares(field, self._sq_buf)
+            return float(self._sq_buf[None]) ** 0.5
+        _sum_squares_kahan(field, self.grid_size, self._sq_part)
+        return float(self._sq_part.to_numpy().astype(np.float64).sum()) ** 0.5
 
     # --- public API -------------------------------------------------------------
 

@@ -137,17 +137,35 @@ def test_device_diagnostics_match_host_reference():
 
     m = icr.mass.astype(np.float64)
     pos, vel = icr.pos.astype(np.float64), icr.vel.astype(np.float64)
-    assert dev["kinetic"] == pytest.approx(diagnostics.kinetic_energy(m, vel), rel=1e-9)
+    p_ref = diagnostics.linear_momentum(m, vel)
+    l_ref = diagnostics.angular_momentum(m, pos, vel)
+
+    # On fp64 backends (CPU/CUDA) the device reductions are exact to fp64 round-off. On Metal
+    # there is no hardware fp64 (RV15/D22), so they run a Kahan-compensated fp32 path; measured
+    # here KE ~3e-10, grid-PE ~4e-9 relative — near-fp64, but the 1e-9 bar is fp64-only.
+    from galaxy_collision.backend import supports_fp64
+
+    scalar_rel = 1e-9 if supports_fp64() else 1e-6
+    assert dev["kinetic"] == pytest.approx(diagnostics.kinetic_energy(m, vel), rel=scalar_rel)
     assert dev["potential"] == pytest.approx(
-        diagnostics.potential_energy_grid(grid.rho.to_numpy(), grid.phi.to_numpy(), dx), rel=1e-9
+        diagnostics.potential_energy_grid(grid.rho.to_numpy(), grid.phi.to_numpy(), dx),
+        rel=scalar_rel,
     )
-    # Vector reductions: device vs NumPy differ only by fp64 summation order (parallel
-    # tree-reduction vs sequential), which shows up in near-zero, cancellation-heavy
-    # components — so compare at 1e-6, not machine epsilon.
-    np.testing.assert_allclose(dev["momentum"], diagnostics.linear_momentum(m, vel), rtol=1e-6)
-    np.testing.assert_allclose(
-        dev["ang_momentum"], diagnostics.angular_momentum(m, pos, vel), rtol=1e-6
-    )
+    if supports_fp64():
+        # Vector reductions: device vs NumPy differ only by fp64 summation order (parallel
+        # tree-reduction vs sequential), which shows up in near-zero, cancellation-heavy
+        # components — so compare at 1e-6, not machine epsilon.
+        np.testing.assert_allclose(dev["momentum"], p_ref, rtol=1e-6)
+        np.testing.assert_allclose(dev["ang_momentum"], l_ref, rtol=1e-6)
+    else:
+        # Metal/fp32: the Plummer net momentum is ~0 (near-total cancellation), so rtol on the
+        # vector is meaningless. Check the deviation against the *summation* scale (Σm|v| for P,
+        # Σm|r×v| for L) — i.e. that the reduction reproduces the host to fp32 precision relative
+        # to the magnitudes actually summed. Observed ~1e-9 of scale here; 1e-5 is safe headroom.
+        p_scale = float((m[:, None] * np.abs(vel)).sum(axis=0).max())
+        l_scale = float((m[:, None] * np.abs(np.cross(pos, vel))).sum(axis=0).max())
+        assert np.abs(dev["momentum"] - p_ref).max() < 1e-5 * p_scale
+        assert np.abs(dev["ang_momentum"] - l_ref).max() < 1e-5 * l_scale
     assert dev["half_mass_radius"] == pytest.approx(
         diagnostics.lagrangian_radius(m, pos, 0.5), rel=5e-3
     )
