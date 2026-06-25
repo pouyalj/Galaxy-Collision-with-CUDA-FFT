@@ -69,17 +69,86 @@ silently fell back to CPU.
 
 ## Usage
 
+Installing the package (`pip install -e .`) puts four commands on your `PATH`. What each one does:
+
 | Command | What it does |
 |---|---|
-| `hello-sim [--config C] [--backend B]` | Minimal end-to-end smoke run (toolchain + backend check). |
-| `galaxy-sim --config C [--backend B]` | Run the full PM N-body pipeline from a YAML config; writes HDF5/npz snapshots + diagnostics. |
-| `paper-repro --config C [--backend B]` | Run a two-galaxy collision and render the paper's density-projection + Sun-like-tracer figures. |
-| `galaxy-bench --n N [--grid G] [--solver S] [--backend B]` | Throughput + per-stage profile of the force chain. |
+| `hello-sim` | Minimal no-op run that just confirms the toolchain and your chosen backend work. Start here. |
+| `galaxy-sim` | Runs the full PM N-body pipeline from a YAML config; writes HDF5/npz snapshots + diagnostics. |
+| `paper-repro` | Runs a two-galaxy collision and renders the paper's density-projection + Sun-like-tracer figures. |
+| `galaxy-bench` | Times the force chain (throughput + per-stage profile). No physics output — a speed test. |
 
-Runs are driven by **YAML configs** (validated against a schema). Ships with `configs/`:
-`plummer.yaml` (equilibrium test), `paper_4v.yaml` / `paper_2v.yaml` (the two collision speeds),
-and `smoke.yaml`. Key knobs: `backend` (`cpu`/`cuda`/`metal`), `n_particles` (or `particle_mass`),
-`grid_size`, `dt`, `steps`, `ic_preset`, `solver` (`multigrid`/`fft`), `output_cadence`, `seed`.
+A run is configured two ways: most settings live in a **YAML config file** (passed with `--config`),
+and a few can be overridden on the command line with **flags**. Both are spelled out below.
+
+### Command-line flags
+
+**`hello-sim`, `galaxy-sim`, `paper-repro`** take the same two core flags:
+
+- **`--config PATH`** — the YAML file describing the run (see [Config file settings](#config-file-settings-yaml)).
+  - `galaxy-sim` and `paper-repro`: **required**.
+  - `hello-sim`: optional, defaults to `configs/smoke.yaml`.
+- **`--backend NAME`** — which processor to run on, overriding whatever the config says. Options:
+  - `cpu` — runs anywhere, no GPU needed (slowest; fine for small tests).
+  - `cuda` — an NVIDIA GPU.
+  - `metal` — an Apple-Silicon GPU (M-series Macs).
+  - *Default:* whatever the config file's `backend` is. Every run prints the device it actually used
+    and warns loudly if a requested GPU silently fell back to CPU.
+
+**`paper-repro`** adds two figure-related flags:
+
+- **`--tracer-radius FLOAT`** — galactocentric radius (in kpc) of the "Sun-like" tracer particle whose
+  path is plotted. *Default:* `8.32` (the Sun's distance from the Galactic center).
+- **`--out PATH`** — directory to write the figures into. *Default:* `figures`.
+
+**`galaxy-bench`** is configured entirely by flags (no YAML needed):
+
+- **`--n INT`** — number of particles. *Default:* `1000000` (1M).
+- **`--grid INT`** — grid cells per side; the box is this many kpc across. *Default:* `256` (a 256³ grid).
+- **`--solver NAME`** — Poisson solver. Options: `multigrid` (the portable production default) or `fft`
+  (the spectrally-exact validation oracle). *Default:* `multigrid`.
+- **`--backend NAME`** — `cpu` · `cuda` · `metal` (as above). *Default:* `cuda` — pass `--backend metal`
+  on a Mac or `--backend cpu` with no GPU.
+- **`--preset NAME`** — which initial condition to benchmark: `two_galaxy_4v` · `two_galaxy_2v` ·
+  `plummer` · `hello`. *Default:* `two_galaxy_4v`.
+- **`--dt FLOAT`** — timestep in Myr (millions of years). *Default:* `0.5`.
+- **`--warmup INT`** — untimed steps run first (to exclude one-time GPU compilation). *Default:* `10`.
+- **`--measure INT`** — timed steps the throughput number is averaged over. *Default:* `10`.
+
+### Config file settings (YAML)
+
+`galaxy-sim`/`paper-repro` read these from the `--config` file; ready-made configs ship in `configs/`
+(`smoke.yaml` — the no-op test · `plummer.yaml` — a single equilibrium sphere · `paper_4v.yaml` /
+`paper_2v.yaml` — the two collision speeds). Every setting, its options, and its default:
+
+- **`backend`** — processor to run on: `cpu` · `cuda` · `metal`. *Default:* `cpu`.
+- **`ic_preset`** — the initial condition (what's in the box at t=0):
+  - `hello` — empty no-op (smoke test only).
+  - `plummer` — a single, settled spherical star cluster; used to check the sim stays stable.
+  - `two_galaxy_4v` — the Milky Way × Andromeda collision at the **higher** approach speed (the pair is
+    less bound and spreads into a large diffuse remnant).
+  - `two_galaxy_2v` — the same collision at the **lower** approach speed (the pair stays bound and compact).
+  - *Default:* `hello`.
+- **`solver`** — how gravity (Poisson's equation) is solved: `multigrid` (portable, runs on every
+  backend — the production default) or `fft` (spectrally-exact, used to validate `multigrid`).
+  *Default:* `multigrid`.
+- **Particle count — set *one* of these** (or neither, to use the preset's own default):
+  - **`n_particles`** — the number of particles directly (e.g. `10000000`).
+  - **`particle_mass`** — solar masses (M☉) per particle; the count is derived as
+    (total galaxy mass) ÷ this. Setting both is an error.
+- **`grid_size`** — density-grid cells per side; the simulation box is this many kpc across, in 1 kpc³
+  cells. Larger = finer resolution but more memory and compute. *Default:* `256`.
+- **`dt`** — timestep in Myr. *Default:* `0.01` (the collision configs use `0.5`).
+- **`steps`** — how many timesteps to integrate. *Default:* `1`.
+- **`separation`** — *(two-galaxy presets only)* initial center-to-center distance between the two
+  galaxies, in kpc. *Default:* `90.0`.
+- **`impact_parameter`** — *(two-galaxy presets only)* sideways offset between their paths, in kpc;
+  `0` is a head-on collision. *Default:* `0.0`.
+- **`output_cadence`** — write a snapshot every N steps; `0` disables snapshot output entirely.
+  *Default:* `0`.
+- **`output_dir`** — folder snapshots are written to. *Default:* `outputs`.
+- **`seed`** — random-number seed; the same seed reproduces the same run exactly. *Default:* `0`.
+- **`name`** — a label for the run (used in output filenames/logs). *Default:* `hello-sim`.
 
 ## Performance
 
