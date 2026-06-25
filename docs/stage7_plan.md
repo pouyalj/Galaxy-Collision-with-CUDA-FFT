@@ -1,7 +1,9 @@
-# Stage 7 — Visualization & output (DRAFT plan)
+# Stage 7 — Visualization & output
 
-> **Status:** draft for owner review (2026-06-25), not yet folded into `AGENT.md` §7.
-> Builds on Stages 0–6 (CPU reference → paper repro → CUDA → Metal; all three backends live).
+> **Status: ✅ COMPLETE (2026-06-25).** 7A ✅ (batch→movie via device 2D projection), 7B ✅ (realtime
+> GGUI viewer, owner-confirmed interactive on the M5 Pro/Metal), 7C ✅ (`docs/visualization.md` +
+> movie confirmed end-to-end). Exit gate met: all four output modes working. Decisions D25–D27; RV19
+> closed. Builds on Stages 0–6 (all three backends live).
 
 ## 0. Goal & exit gate (from AGENT.md §5.7, §7)
 
@@ -95,7 +97,7 @@ It also retires the snapshot-bloat problem: movies never write the 2.4 GB snapsh
 **Exit 7B:** the viewer runs interactively on the Mac (Metal) at an interactive frame rate for a
 10–30M sim; both modes + controls work. (Headless CI only imports/constructs it — no window.)
 
-### 7C — Integration, headline artifacts, write-up 🔄 **Docs done (2026-06-25); pending live viewer confirm**
+### 7C — Integration, headline artifacts, write-up ✅ **Done (2026-06-25)**
 
 > **Delivered.** (1) **All four modes confirmed** — snapshots (`test_io`) + paper figures
 > (`test_viz`) from Stages 3/4; **movie confirmed end-to-end on Metal** (`test_movie` un-skipped with
@@ -111,9 +113,9 @@ It also retires the snapshot-bloat problem: movies never write the 2.4 GB snapsh
 3. **Docs/sync:** `docs/visualization.md`; `AGENT.md` §5.7/§7 (Stage 7 → ✅) + §9 (Q1 resolved) + §11;
    README "Highlights"/Usage; `pyproject` `viz` extra. Suite green on CPU/CUDA/Metal.
 
-**Exit 7C (= Stage-7 exit gate):** all four output modes working + documented; suite green. *Status:
-docs + 3/4 modes confirmed locally; the **interactive viewer** is confirmed live by the owner (the
-one path no headless box can check), which closes the gate → Stage 7 ✅.*
+**Exit 7C (= Stage-7 exit gate):** ✅ all four output modes working + documented; suite green
+(126 pass, 2 CUDA-only skips). The interactive viewer was confirmed live by the owner on the M5 Pro
+(the one path no headless box can check) — gate closed, **Stage 7 ✅**.
 
 ## 3. Dependencies & packaging
 

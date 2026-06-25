@@ -41,7 +41,7 @@
 - **State:** The original three near-duplicate CUDA C files (now archived under `legacy/`, see §3.1)
   compile against CUDA 9.2 + cuFFT + DISLIN on a specific 2020 lab machine. Several correctness and
   performance bugs (see §3.6) mean the headline configuration (M = 100,000,000 particles) will not
-  realistically run as written. **Modernization status:** Stages 0–**6** are **done** — see §7. The
+  realistically run as written. **Modernization status:** Stages 0–**7** are **done** — see §7. The
   repo root hosts the `galaxy_collision` Python package with a scaffold, a tested (kpc, Myr, M☉)
   unit system, the SoA particle/grid data model, a reproducible two-galaxy IC generator
   (disk+bulge+central BH, 4v/2v), and — as of Stage 3 — a **correct CPU simulation**: CIC
@@ -65,8 +65,9 @@
   anchor). **6B** Metal benchmark matrix 1M/10M/30M/100M (19.1/5.6/2.1/0.65 steps/s; 100M fits in
   64 GB unified); the CIC deposit is the Metal throughput ceiling at scale (write-scatter, not
   atomics/order — RV20, accepted per D23). **6C** bounded 100M end-to-end collision on Metal (stable,
-  sane diagnostics). **Stage 7 (viz/output) in progress — 7A (batch→movie) + 7B (realtime GGUI
-  viewer, runs on Metal) ✅ done; 7C (write-up) remains** (see the §7 row / `docs/stage7_plan.md`).
+  sane diagnostics). **Stage 7 (viz/output) ✅ complete** — 7A batch→movie (`galaxy-movie`), 7B
+  realtime GGUI viewer (`galaxy-view`, owner-confirmed live on Metal), 7C write-up
+  (`docs/visualization.md`); all four output modes working. **Next: Stage 8 (research campaigns).**
   Plan: `docs/stage6_plan.md` (D22–D24).
 - **Goal (scoped):** Rebuild as **one portable source** (Taichi-style kernels compiling to
   CPU + CUDA + Metal), research-grade physics, **10–100M particles**, **Apple GPU as a
@@ -592,7 +593,7 @@ The full, shareable version of this plan — with per-stage objectives, tasks, d
 criteria — is in **`Galaxy_Collision_Modernization_Plan.docx`** (a generated artifact, gitignored;
 this section is the tracked source of truth).
 
-> **Current status (2026-06-25):** Stages 0–**6** ✅ done. **Stage 5 (CUDA scale-up) complete** —
+> **Current status (2026-06-25):** Stages 0–**7** ✅ done. **Stage 5 (CUDA scale-up) complete** —
 > the force chain is device-resident, the multigrid solve was tuned for **6.5–12.5× throughput**
 > (adaptive warm-start V-cycling + a thread-local moment-reduction fix; `docs/performance.md`), the
 > FFT oracle gained a CuPy/cuFFT GPU path, and the **100M-particle headline collision** ran on the
@@ -601,8 +602,9 @@ this section is the tracked source of truth).
 > 3-way **test 6** parity (CPU↔CUDA + CPU↔Metal legs sharing the CPU anchor), a Metal benchmark
 > matrix (the CIC **deposit** is the Metal throughput ceiling at scale — write-scatter-bound, *not*
 > atomics/order, RV20/D23 = accept), and a bounded 100M end-to-end collision on the M5 Pro. Suite
-> green on CPU, CUDA **and** Metal (123). **Stage 7 (viz/output) in progress — 7A (movie) + 7B
-> (GGUI viewer) ✅; 7C write-up remains** (`docs/stage7_plan.md`; §7 row synced at 7C).
+> green on CPU, CUDA **and** Metal (123). **Stage 7 (viz/output) ✅ complete** — 7A batch→movie, 7B
+> realtime GGUI viewer (owner-confirmed live on Metal), 7C write-up (`docs/visualization.md`); all
+> four output modes working (`docs/stage7_plan.md`). **Next: Stage 8 (research campaigns).**
 > The FFT oracle was pulled forward into Stage 3 (so multigrid is validated against it now).
 > **Stage 4 complete** (scope = D18) —
 > **4A ✅, 4B ✅, 4C ✅** — the 4v & 2v collisions were run at 256³ / 10M particles and the paper's
@@ -637,7 +639,7 @@ this section is the tracked source of truth).
 | **4 — Validation & FFT oracle** | Zero-padded isolated FFT (✅ Stage 3) + validation hardening (4A) + paper-repro machinery (4B) + production 4v/2v runs & figures (4C) | CPU | Multigrid ≈ FFT within tolerance (✅); paper figures reproduced (✅ *qualitatively* — `docs/paper_reproduction.md`) | ✅ **Done** (2026-06-22) |
 | **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | ✅ **Done** (2026-06-25). RTX 3070 8 GB (`docs/gpu_setup.md`); checkpoints 5A→5C (`docs/stage5_plan.md`, D19–D21). **5A** device-resident force chain (RV6, RV10). **5B** profiler + benchmark (`docs/performance.md`): **6.5–12.5× throughput** via adaptive warm-start V-cycling + a TLS moment-reduction fix (solve ~13×; RV5); D19 closed by measurement. **5C** CuPy/cuFFT GPU oracle (D21, validates multigrid at 256³) + the **100M headline run** (D20: 800 steps/400 Myr, 3.86 steps/s, peak 6491 MiB/8192 — fits). Suite green on CPU **and** CUDA. |
 | **6 — Apple / Metal** | First-class Apple GPU, fp32 compute policy | Metal | Cross-backend parity (test 6); perf benchmark vs CUDA | ✅ **Done** (2026-06-25). Plan: `docs/stage6_plan.md` (D22–D24); checkpoints 6A→6C. **6A** Kahan-fp32 reductions for fp64-less Metal (RV15 closed), pipeline on `arch=metal`, **test 6 complete** (CPU↔CUDA + CPU↔Metal legs sharing the CPU anchor). **6B** Metal benchmark matrix 1M/10M/30M/100M (19.1/5.6/2.1/0.65 steps/s; 100M fits, 21.5 GiB/64 GB unified); the CIC **deposit** is the Metal throughput ceiling at scale — characterized as global write-scatter, *not* atomics/particle-order (RV20, D23 = accept). **6C** bounded 100M end-to-end collision on the M5 Pro (60 steps, stable, sane diagnostics). Suite green on CPU, CUDA **and** Metal (123). |
-| **7 — Visualization & output** | Realtime GGUI, batch→movie, paper figures, tracer particle | all | All four output modes working | 🔄 **In progress** (plan: `docs/stage7_plan.md`, D25–D27). Modes (3) snapshots + (4) paper figures already existed (Stages 3/4). **7A ✅** batch→movie via a device-side 2D density-projection kernel (`viz/project.py`, ~1 MB/frame not 2.4 GB), `viz/movie.py` + `galaxy-movie` (MP4/GIF via imageio-ffmpeg); **RV19 closed** (100M density panels, `docs/figures/`). **7B ✅** realtime GGUI viewer (`viz/viewer.py` + `galaxy-view`) — confirmed on **`arch=metal`**; 3D subsample (gid-colored) + 2D projection modes, orbit camera, pause/step/restart/speed controls, offscreen smoke test. Next: **7C** (integration write-up + `docs/visualization.md` → mark Stage 7 ✅). |
+| **7 — Visualization & output** | Realtime GGUI, batch→movie, paper figures, tracer particle | all | All four output modes working | ✅ **Done** (2026-06-25). Plan: `docs/stage7_plan.md` (D25–D27); checkpoints 7A→7C. Modes (3) snapshots + (4) paper figures predate this (Stages 3/4). **7A** batch→movie via a device-side 2D density-projection kernel (`viz/project.py`, ~1 MB/frame not 2.4 GB), `viz/movie.py` + `galaxy-movie` (MP4/GIF via imageio-ffmpeg); **RV19 closed** (100M density panels, `docs/figures/`). **7B** realtime GGUI viewer (`viz/viewer.py` + `galaxy-view`) — runs on **`arch=metal`**; 3D subsample (gid-colored) + full-N 2D projection (on-device colormap), orbit camera, pause/step/restart/speed controls; **owner-confirmed interactive on the M5 Pro**. **7C** `docs/visualization.md` + movie confirmed end-to-end on Metal; §9 Q1 resolved (D25). **All four output modes working.** Suite 126 pass (2 CUDA-only skips) on CPU/Metal. |
 | **8 — Research campaigns** | 4v/2v studies, central-BH experiments, longer runs | all | Reproduce + extend 2020 results (future hooks: DM halo, TreePM) | ⬜ |
 
 Stage 3 is the linchpin: get the physics provably correct on CPU first, *then* chase speed and
