@@ -193,3 +193,12 @@ grid layout so scattered writes hit fewer cache lines — is a large, uncertain 
 to its payoff here; it is logged as **RV20** (deferred) and Vulkan-compute + VkFFT remains the
 heavy-escalation fallback (not triggered). The `galaxy-bench` harness is here to re-measure if a
 future workload or a Taichi/Metal upgrade changes the picture.
+
+## 6C — bounded 100M end-to-end run (Metal)
+
+A short live collision (not a benchmark) confirming the full chain completes at scale on Metal:
+`two_galaxy_4v`, **100M / 256³, 60 steps (30 Myr)** on the M5 Pro — **0.50 steps/s**, **21.8 GiB
+RSS / 64 GB** (stable), virial 0.935, half-mass 45.7→39.0 kpc (early infall). Numbers + rationale
+in [`stage6_plan.md`](stage6_plan.md) 6C. The **0.50 vs 0.65** steps/s gap from the 100M benchmark
+above is the live-collision-vs-quiescent-benchmark difference (a live run drives ρ harder, so the
+adaptive solver spends more cycles) — the same pattern as 5C on CUDA (3.86 live vs 6.95 benchmark).
