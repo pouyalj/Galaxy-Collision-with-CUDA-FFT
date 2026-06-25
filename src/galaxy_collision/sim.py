@@ -201,6 +201,9 @@ def run_simulation(
     direct_pe_softening: float | None = None,
     icr=None,
     tracer_indices=None,
+    frame_cadence: int | None = None,
+    frame_bins: int = 512,
+    frame_axes: tuple[int, int] = (0, 1),
 ) -> dict[str, Any]:
     """Run the full PM N-body pipeline and return a summary (incl. a diagnostics history).
 
@@ -220,6 +223,12 @@ def run_simulation(
     paper-repro driver builds a tuned IC and selects a tracer first). ``tracer_indices`` is a
     sequence of *global* particle indices whose positions are recorded each history sample and
     returned as ``tracer_path`` (shape ``(n_samples, n_tracers, 3)``) — the Sun-like tracer path.
+
+    ``frame_cadence`` (Stage 7), when set, captures a **device-projected** surface-density frame
+    (``frame_bins``² over the box, in-plane ``frame_axes``) every that-many steps plus the first and
+    last — returned as ``frames`` (shape ``(n_frames, frame_bins, frame_bins)``) + ``frame_times``.
+    The projection happens on the device (``viz.project``), so a frame costs a ~1 MB transfer, not a
+    full position dump — this is the movie path that never writes the multi-GB snapshots.
     """
     import numpy as np
     import taichi as ti
@@ -268,6 +277,19 @@ def run_simulation(
     # Device-resident conservation diagnostics (RV6b). Allocate its scratch fields here,
     # before any kernel launch (equilibration below), per Taichi's field-creation rule.
     dev_diag = DeviceDiagnostics(gsize)
+
+    # Movie frame buffer (Stage 7). Allocate here too — before any kernel launch — so the
+    # device projection has a field to scatter into. Only the small image crosses to the host.
+    frame_img = ti.field(ti.f32, shape=(frame_bins, frame_bins)) if frame_cadence else None
+    frame_extent = (0.0, gsize * DX, 0.0, gsize * DX)
+    frames: list[np.ndarray] = []
+    frame_times: list[float] = []
+
+    def capture_frame(step: int) -> None:
+        from galaxy_collision.viz.project import project_density
+
+        frames.append(project_density(parts, frame_img, frame_extent, frame_axes))
+        frame_times.append(step * config.dt)
 
     # Launch each disk in equilibrium with the PM grid force (not an analytic-softening guess):
     # measure the grid's own rotation curve and set the disk velocities from it (§5.5 / D18).
@@ -360,6 +382,8 @@ def run_simulation(
     history = [m0]
     if _snapshot_due(0):
         write_snap(0, m0)
+    if frame_cadence:
+        capture_frame(0)
     for step in range(1, config.steps + 1):
         kdk_step(parts, acc_x, acc_y, acc_z, accel_fn, config.dt)
         want_hist = step % hist_cad == 0 or step == config.steps
@@ -370,6 +394,8 @@ def run_simulation(
                 history.append(m)
             if want_snap:
                 write_snap(step, m)
+        if frame_cadence and (step % frame_cadence == 0 or step == config.steps):
+            capture_frame(step)
     ti.sync()
 
     e0 = history[0]["energy"]
@@ -398,6 +424,10 @@ def run_simulation(
             np.stack([h["tracer_pos"] for h in history]) if tracer_idx is not None else None
         ),
         "tracer_times": np.array([h["time"] for h in history]) if tracer_idx is not None else None,
+        # Movie frames (Stage 7): device-projected surface-density images + their times (Myr).
+        "frames": np.stack(frames) if frames else None,
+        "frame_times": np.array(frame_times) if frames else None,
+        "frame_extent": frame_extent if frame_cadence else None,
         "history": history,
         "snapshots": snapshots,
         "status": "ok",

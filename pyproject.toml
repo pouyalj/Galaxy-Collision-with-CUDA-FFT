@@ -28,6 +28,9 @@ dependencies = [
 # path. The [ctk] extra pulls the CUDA toolkit wheels (nvrtc + headers) CuPy needs to JIT its
 # elementwise kernels — without them only precompiled cuFFT works, not the Green's-function build.
 cuda = ["cupy-cuda12x[ctk]>=12.0"]
+# Movie encoding (Stage 7): density-projection frames → MP4/GIF. imageio-ffmpeg bundles the ffmpeg
+# binary, so no system install is needed. matplotlib (figures) is already a core dependency.
+viz = ["imageio>=2.31", "imageio-ffmpeg>=0.4"]
 dev = [
     "pytest>=7.4",
     "ruff>=0.4",
@@ -37,6 +40,7 @@ dev = [
 hello-sim = "galaxy_collision.sim:hello_sim_cli"
 galaxy-sim = "galaxy_collision.sim:run_sim_cli"
 galaxy-bench = "galaxy_collision.bench:bench_cli"
+galaxy-movie = "galaxy_collision.viz.movie:galaxy_movie_cli"
 paper-repro = "galaxy_collision.viz.paper_repro:paper_repro_cli"
 
 [project.urls]
