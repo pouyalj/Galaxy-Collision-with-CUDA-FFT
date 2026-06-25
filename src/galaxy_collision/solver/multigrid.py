@@ -195,10 +195,13 @@ def _accumulate_moments_kahan(rho: ti.template(), n: ti.i32, dx: ti.f32, part: t
 
     Same moments as :func:`_accumulate_moments`, but f64 is illegal on Metal. Parallelizes
     over the ``(i,j)`` column (``n²`` lanes, division-free); each lane Kahan-sums its ``n``
-    cells along ``k`` into ten fp32 partials at ``part[c,i,j]``, with a running compensation
-    term that recovers the bits a naive fp32 sum drops. The host finishes the ``n²→1`` sum in
-    fp64 (a tiny fixed copy, never a full-grid round-trip). Measured ~5e-8 rel. error at 256³
-    vs ~1e-3 naive fp32 (``docs/stage6_plan.md`` 6A)."""
+    cells along ``k`` into ten fp32 partials at ``part[c,i,j]``, finished by the host in fp64
+    (a tiny fixed copy, never a full-grid round-trip). For the *moments* specifically the
+    column structure does most of the work — x,y are constant down a column, so eight of the
+    ten components reduce to const·(column mass), and the fp64 cross-column combine is exact;
+    Kahan mainly protects ``Σm`` and the z-moments (which vary along k). Measured ~5e-8 rel.
+    at 256³ (the column-hybrid alone is already ~1e-8; the ~1e-3 baseline is a single global
+    fp32 accumulator). See ``backend`` / ``docs/stage6_plan.md`` 6A."""
     vol = dx * dx * dx
     for i, j in ti.ndrange(n, n):
         s = ti.Vector.zero(ti.f32, 10)
@@ -339,7 +342,10 @@ class MultigridPoissonSolver(PoissonSolver):
 
         # Boundary-moment + L2-norm reductions pick their path from the backend's fp64
         # support (Stage 6 / RV15, D22): f64 thread-local reductions on CPU/CUDA (unchanged),
-        # a Kahan-compensated fp32 reduction on Metal (no hardware fp64).
+        # a Kahan-compensated fp32 reduction on Metal (no hardware fp64). CONTRACT: the f64
+        # kernels (_accumulate_moments, _sum_squares) must never be *called* on Metal — Taichi
+        # JITs a kernel lazily on first call, so an uncalled f64 kernel costs nothing, but
+        # calling one on Metal fails to compile ("Type f64 not supported"). _fp64 gates that.
         self._fp64 = supports_fp64()
         if self._fp64:
             # Ten 0-D f64 accumulators for the raw boundary moments (RV6a). 0-D (not a

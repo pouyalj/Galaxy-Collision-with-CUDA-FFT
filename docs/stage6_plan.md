@@ -67,14 +67,21 @@ re-pass — before any perf claim.*
 > `_sum_squares_kahan` (boundary moments + adaptive-cycling L2 norm) and
 > `diagnostics_device._reduce_{particle_scalars,grid_pe}_kahan` + an fp32 radial histogram —
 > partials finished in host fp64 (a tiny fixed copy, no full-grid round-trip). (3) **Measured
-> accuracy** vs the fp64 numpy reference: moments ~5e-8, KE ~3e-10, grid-PE ~4e-9 rel. — *plain*
-> fp32 was ~1e-3, so Kahan is load-bearing (`probe_moments`/`probe_diag_metal`). (4) Whole PM
-> pipeline runs end-to-end on `arch=metal`; no other Metal-specific kernel issue surfaced. (5)
-> `test_device_diagnostics_match_host_reference` made arch-aware (tight on CPU/CUDA; fp32-scaled
-> on Metal — near-zero momentum compared against the Σm|v| summation scale, not rtol). (6) New
-> `test_cpu_metal_trajectories_agree` completes **test 6** (3-way parity): CPU↔Metal tracer paths
-> agree to ~2e-6 kpc over 15 steps (cap 1e-3). **Suite green on CPU and Metal (123); ruff clean.**
-> RV15 closed.
+> accuracy** vs the fp64 numpy reference: moments ~5e-8, KE ~3e-10, grid-PE ~4e-9 rel. Two
+> distinct things buy this, and the credit splits: the **column-hybrid structure** (short fp32
+> per-column sums + an exact fp64 cross-column combine) does most of the work for the *moments*
+> — their position factors are constant per column, so most components reduce to const·(column
+> mass), and column-hybrid *alone* already lands ~1e-8 there — while **Kahan** is the dominant
+> contributor for the **grid-PE and L2-norm** reductions, where ρ·Φ / the residual vary along
+> the column and don't factor. The ~1e-3 figure both improve on is a single global fp32
+> accumulator (no hybrid, no Kahan). (4) Whole PM pipeline runs end-to-end on `arch=metal`; no
+> other Metal-specific kernel issue surfaced. (5) `test_device_diagnostics_match_host_reference`
+> made arch-aware (tight on CPU/CUDA; fp32-scaled on Metal — near-zero momentum compared against
+> the Σm|v| summation scale, not rtol). (6) New `test_cpu_metal_trajectories_agree` adds the
+> Metal leg of **test 6**: CPU↔Metal tracer paths agree to ~2e-6 kpc over 15 steps (cap 1e-3).
+> Note test 6 is **two pairwise legs sharing the CPU anchor** (CPU↔CUDA on the 3070, CPU↔Metal
+> on the Mac), not a simultaneous 3-way run — no box has both GPUs, so CUDA↔Metal holds only
+> transitively through CPU. **Suite green on CPU and Metal (123); ruff clean.** RV15 closed.
 
 1. **Kahan-fp32 reduction path (D22, RV15).** Add a compensated-summation fp32 reduction for both
    `multigrid._moments_device` and the `diagnostics_device` accumulators, selected by backend
@@ -84,9 +91,11 @@ re-pass — before any perf claim.*
 2. **Metal pipeline bring-up.** Run the full PM pipeline on `arch=metal`: Plummer (small N) and a
    `two_galaxy_4v` smoke at 256³. Fix whatever Metal-specific kernel issues surface (atomic types,
    template specializations, unsupported ops).
-3. **3-way parity test (test 6, RV-complete).** Extend `tests/test_determinism.py` so the same
-   IC + seed on CPU, CUDA, **and** Metal agree within an fp32 trajectory tolerance over a short run.
-   (Skip CUDA/Metal legs gracefully when that arch is absent, as the existing override does.)
+3. **Parity test (test 6, RV-complete).** Extend `tests/test_determinism.py` with a CPU↔Metal leg
+   so the same IC + seed agrees within an fp32 trajectory tolerance over a short run. This makes
+   test 6 **two pairwise legs sharing the CPU anchor** (CPU↔CUDA + CPU↔Metal), not a simultaneous
+   3-way run — no single box has both GPUs, so CUDA↔Metal holds only transitively via CPU. (Each
+   leg skips gracefully when its arch is absent.)
 4. **Suite re-pass on Metal.** `GALAXY_TEST_ARCH=metal pytest` green; ruff clean. Document any test
    that must widen its tolerance for fp32-on-Metal (and why).
 

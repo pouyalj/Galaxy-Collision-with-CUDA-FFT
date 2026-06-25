@@ -1,13 +1,17 @@
 """Cross-backend determinism — CPU vs CUDA vs Metal (AGENT.md §6 test 6).
 
 §5.3 requires that an identical IC + seed produce matching trajectories across backends
-within an fp32 tolerance. Stage 5 added the CPU↔CUDA leg; Stage 6 completes the 3-way parity
-with CPU↔Metal (RV15 made the device reductions Metal-safe). Each leg guards that a GPU force
-chain (device-resident deposit → multigrid → grad → gather → KDK) computes the *same physics*
-as the trusted CPU reference, not a silently different kernel.
+within an fp32 tolerance. Stage 5 added the CPU↔CUDA leg; Stage 6 added CPU↔Metal (RV15 made
+the device reductions Metal-safe). Each leg guards that a GPU force chain (device-resident
+deposit → multigrid → grad → gather → KDK) computes the *same physics* as the trusted CPU
+reference, not a silently different kernel.
 
-Each GPU leg self-skips when its device is unavailable, so on CPU-only CI both are no-ops; on
-the NVIDIA workstation the CUDA leg runs, and on the Apple dev box the Metal leg runs.
+**This is two pairwise tests sharing the CPU anchor, not one simultaneous 3-way comparison.**
+No single machine has both CUDA and Metal (the CUDA leg runs on the NVIDIA workstation, the
+Metal leg on the Apple dev box), so CUDA↔Metal is never compared directly — it holds only
+*transitively* through the common CPU reference. That's unavoidable, and sufficient: each GPU
+kernel is pinned to the same trusted CPU physics. Each leg self-skips when its device is
+unavailable, so on CPU-only CI both are no-ops.
 """
 
 from __future__ import annotations

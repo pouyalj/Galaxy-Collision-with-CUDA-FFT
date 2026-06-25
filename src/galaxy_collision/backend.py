@@ -7,10 +7,16 @@ in :mod:`galaxy_collision.solver.multigrid` and :mod:`galaxy_collision.diagnosti
 therefore choose their accumulator path from :func:`supports_fp64`:
 
 * **fp64 available (CPU/CUDA):** the original thread-local f64 reductions, unchanged.
-* **no fp64 (Metal):** a **Kahan-compensated fp32** reduction — partials accumulated in
-  fp32 with running compensation, finished in host fp64 (a tiny fixed copy, never a
-  full-grid round-trip). Measured ~5e-8 relative error at 256³, vs ~1e-3 for a naive fp32
-  sum (see ``docs/stage6_plan.md`` 6A).
+* **no fp64 (Metal):** a **column-hybrid fp32** reduction — fp32 partials per ``(i,j)``
+  column (or per grid-stride lane), each Kahan-compensated, finished in host fp64 (a tiny
+  fixed copy, never a full-grid round-trip). Two things buy the accuracy here, and it's worth
+  not conflating them: (1) the *column structure* shortens each fp32 sum from ~1.7e7 terms to
+  ~n, and the fp64 cross-column combine is exact — this alone gets the moments to ~1e-8
+  (their position factors are constant per column, so most components reduce to
+  const·column-mass); (2) **Kahan** refines that and matters most for the grid-PE and
+  L2-norm reductions, where ρ·Φ / the residual vary along the column and *don't* factor. The
+  ~1e-3 baseline both techniques improve on is a single global fp32 accumulator — no hybrid,
+  no Kahan (see ``docs/stage6_plan.md`` 6A).
 
 This module deliberately reads the *currently initialized* arch, so it must be called
 after ``ti.init`` (i.e. after :func:`galaxy_collision.sim.init_backend`).

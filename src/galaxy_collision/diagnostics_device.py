@@ -238,7 +238,10 @@ class DeviceDiagnostics:
         # the host `lagrangian_radius`, this trades a hair of exactness (binning) for residency.
         self.binw = self.r_max / nbins
         # f64 reductions on CPU/CUDA; Kahan-fp32 partials (finished in host fp64) on Metal,
-        # which has no hardware fp64 (Stage 6 / RV15, D22).
+        # which has no hardware fp64 (Stage 6 / RV15, D22). CONTRACT: the f64 kernels
+        # (_reduce_particle_scalars, _reduce_grid_pe, _radial_mass_histogram) must never be
+        # *called* on Metal — Taichi JITs lazily per call, so an uncalled f64 kernel is free,
+        # but calling one on Metal fails to compile ("Type f64 not supported"). _fp64 gates it.
         self._fp64 = supports_fp64()
         if self._fp64:
             self._pbuf = ti.field(ti.f64, shape=_PSCALARS)
