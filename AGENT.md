@@ -138,7 +138,7 @@ GalaxyCollision/
     │   ├── solver/                     # base + multigrid (open-BC) + fft_oracle (Stage 3)
     │   └── viz/                        # paper_repro static figures (Stage 4/4B); GGUI/movie = Stage 7
     ├── tests/                          # …/solver_*/integrator/io/sim/determinism + conftest (GALAXY_TEST_ARCH)
-    ├── docs/{development,paper_reproduction,gpu_setup}.md  ·  docs/stage5_plan.md (draft)
+    ├── docs/{development,paper_reproduction,gpu_setup,performance}.md  ·  docs/stage{5,6}_plan.md
     └── legacy/                         # original 2020 CUDA source, preserved for reference
         ├── README.md                   # build notes + bug pointers
         ├── CUDAfft2.0.cu               # 307 lines — FFT-Poisson TEST HARNESS
@@ -640,13 +640,17 @@ suite** to count as done.
 
 - **R1 — ~~No Apple hardware on hand~~ → RESOLVED (2026-06-21).** The owner's primary dev box is now
   an **Apple M5 Pro** Mac, which is exactly the Metal target tier (D17) — Metal validation/benchmarking
-  runs directly on it (Taichi `arch=metal` confirmed working). The flipped risk is now **CUDA access**:
-  the NVIDIA workstation is not yet set up and is a Stage-5 prerequisite (D7, §7).
-- **R2 — Taichi Metal feature/perf gaps** (e.g. large atomic-scatter throughput, kernel features).
-  *Mitigation:* a Phase-0/1 spike that benchmarks CIC deposition on Metal; if it underperforms,
-  fall back plan is **Vulkan-compute + VkFFT** (one GPU source covering NVIDIA + Apple via
-  MoltenVK/native-Metal, peak FFT everywhere) — keep the `PoissonSolver`/kernel interfaces
-  abstract enough to swap.
+  ran directly on it (Stage 6 ✅). The CUDA workstation (the flipped risk) was also provisioned and
+  Stage 5 completed on the RTX 3070, so both GPU backends are now realized.
+- **R2 — Taichi Metal feature/perf gaps** (large atomic-scatter throughput, kernel features) →
+  **PARTIALLY MATERIALIZED (2026-06-25, Stage 6).** No feature gaps surfaced (the whole pipeline
+  compiles/runs on `arch=metal`; fp64 was the one hard gap, handled in 6A). But the **perf** half is
+  real: the CIC **deposit** is the Metal throughput ceiling at scale (86% of the step at 100M, ~10×
+  CUDA) — the 6B spike pinned it to global-memory **write-scatter** (not atomics, not particle order;
+  RV20). Per D23 this was **accepted + documented** rather than escalated. The fallback —
+  **Vulkan-compute + VkFFT** (one GPU source across NVIDIA + Apple via MoltenVK/native-Metal) — was
+  **not** triggered; the `PoissonSolver`/kernel interfaces remain abstract enough to swap if a future
+  workload makes Metal deposit blocking.
 - **R3 — fp32 accuracy over long integrations.** *Mitigation:* energy-drift monitoring,
   compensated summation for diagnostics, optional fp64 reference run on CUDA.
 - **R4 — Multigrid open-BC accuracy** (boundary multipole order, convergence). *Mitigation:* it's
@@ -663,9 +667,9 @@ resolves former Q4 (repo placement). Unit system standardized on **(kpc, Myr, M�
 derived, unit-tested G (D15) — this resolves former Q2.
 
 **Resolved 2026-06-21:** former Q1 (Apple hardware) — the owner's dev Mac is an **Apple M5 Pro**;
-Metal is validated/optimized directly on it at the **M5 Pro tier** (D17), resolving Risk R1. The
-counterpart is that the CUDA NVIDIA workstation is not yet provisioned and is a Stage-5 prerequisite
-(D7, §7 Stage-5 row).
+Metal was validated/optimized directly on it at the **M5 Pro tier** (D17), resolving Risk R1, and
+Stage 6 completed there (2026-06-25). The CUDA NVIDIA workstation (the counterpart prerequisite) was
+also provisioned and Stage 5 completed on the RTX 3070 — so both GPU backends are now realized.
 
 Still open:
 

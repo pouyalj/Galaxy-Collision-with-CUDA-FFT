@@ -83,17 +83,19 @@ and `smoke.yaml`. Key knobs: `backend` (`cpu`/`cuda`/`metal`), `n_particles` (or
 
 ## Performance
 
-On an 8 GB NVIDIA RTX 3070 (256³ grid, multigrid solver):
+256³ grid, multigrid solver, on the two GPU backends (NVIDIA RTX 3070, 8 GB · Apple M5 Pro, 64 GB):
 
-| N particles | throughput | peak VRAM |
+| N particles | CUDA (RTX 3070) | Metal (M5 Pro) |
 |---|---|---|
-| 1M | 33 steps/s | 0.8 GB |
-| 10M | 25 steps/s | 1.3 GB |
-| 30M | 16 steps/s | 2.5 GB |
-| 100M | 7 steps/s | 6.5 GB |
+| 1M | 33 steps/s | 19 steps/s |
+| 10M | 25 steps/s | 5.6 steps/s |
+| 30M | 16 steps/s | 2.1 steps/s |
+| 100M | 7 steps/s (6.5 GB VRAM) | 0.65 steps/s (fits in unified memory) |
 
-A 100M-particle, 800-step (400-Myr) collision completes in ~3.5 minutes. Full benchmark, the
-per-stage breakdown, and the tuning that got there (adaptive warm-start multigrid cycling) are in
+A 100M-particle, 800-step (400-Myr) collision completes in ~3.5 minutes on the 3070. Metal is
+competitive where the grid solve dominates (1M) but the CIC **deposit** (global write-scatter) is its
+throughput ceiling at scale — ~10× CUDA's deposit at 100M, an accepted, characterized limitation.
+Full benchmark matrix, per-stage breakdown, the CUDA solve tuning, and the Metal deposit spike are in
 [`docs/performance.md`](docs/performance.md).
 
 ## How it works
@@ -149,9 +151,10 @@ CPU↔CUDA determinism. Contributor setup is in [`docs/development.md`](docs/dev
 | [`AGENT.md`](AGENT.md) | The project bible — architecture, decision record, staged plan, review log. |
 | [`docs/development.md`](docs/development.md) | Contributor quickstart. |
 | [`docs/gpu_setup.md`](docs/gpu_setup.md) | Provisioning a CUDA workstation. |
-| [`docs/performance.md`](docs/performance.md) | Benchmark matrix + per-stage profile (Stage 5). |
+| [`docs/performance.md`](docs/performance.md) | Benchmark matrix + per-stage profile (CUDA, Stage 5; Metal, Stage 6). |
 | [`docs/paper_reproduction.md`](docs/paper_reproduction.md) | Reproducing the 2020 paper's figures. |
-| [`docs/stage5_plan.md`](docs/stage5_plan.md) | The CUDA scale-up plan. |
+| [`docs/stage5_plan.md`](docs/stage5_plan.md) | The CUDA scale-up plan (Stage 5). |
+| [`docs/stage6_plan.md`](docs/stage6_plan.md) | The Apple/Metal plan (Stage 6). |
 
 ## Roadmap
 
