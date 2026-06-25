@@ -8,8 +8,11 @@ and the realtime viewer's 2D mode (Stage 7B).
 
 The output matches ``viz.paper_repro._hist2d`` exactly — a mass-weighted 2D histogram divided by
 the bin area (surface density, M_sun/kpc²), transposed for ``imshow(origin="lower")`` — so movie
-frames and the static paper figures share one convention. Binning is nearest-bin (matching
-``np.histogram2d``); mass outside the extent is dropped (open boundaries, like the deposit).
+frames and the static paper figures share one convention. Binning is **nearest-bin (NGP), not
+CIC** — it must match ``np.histogram2d``, and a LogNorm image doesn't benefit from CIC smoothing.
+Mass outside the extent is dropped (open boundaries, like the deposit); a particle exactly on the
+*upper* edge lands in ``bin == bins`` and is likewise dropped, where ``np.histogram2d`` keeps it in
+the last bin — a measure-zero difference for real particle distributions.
 
 f32 accumulation keeps it Metal-safe (no fp64) and is plenty for a LogNorm image. This module
 deliberately omits ``from __future__ import annotations`` — PEP 563 would stringize the

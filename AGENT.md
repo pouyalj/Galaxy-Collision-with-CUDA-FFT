@@ -766,6 +766,12 @@ Items from **Stage 6 / 6B (2026-06-25)** — Metal benchmark + deposit spike:
 |---|---|---|---|---|
 | RV20 | Perf (Metal deposit) | On Metal the CIC **deposit** is the throughput ceiling at scale — 69% of the step at 10M, 86% at 100M (~50× slower than CUDA's deposit; `docs/performance.md` 6B). The 6B spike pinned the cause to **global-memory write-scatter, geometry-bound** — *not* atomics (racy non-atomic `+=` is identical, 1.00×) and *not* particle order (cell-sort doesn't help, marginally slower). Evidence: gather (8 grid *reads*/particle) is ~19× cheaper than deposit (8 *writes*) at 100M, and a compact 3D gaussian deposits 16× faster than the thin-disk galaxy with the same kernel — thin disks → poor cache-line use for scattered writes in the row-major 256³ grid. | Per D23 the decision was **accept + document** (the backend is correct and runs 100M in unified memory; the two cheap fixes are ruled out by measurement). A real attempt would need **block-local threadgroup-memory privatization with spatial binning**, or a Morton/blocked `GridState` layout — large, uncertain payoff. Vulkan-compute + VkFFT remains the heavy-escalation fallback. Re-measure on Taichi/Metal upgrades. | ⬜ Deferred (accepted; revisit only if Metal deposit throughput becomes blocking) |
 
+Items from **Stage 7 / 7A (2026-06-25)** — batch→movie; forward note, non-blocking:
+
+| ID | Area | Finding | Suggested action | Status |
+|---|---|---|---|---|
+| RV21 | Memory (movie) | `run_simulation(frame_cadence=…)` accumulates the projected frames **in host memory** and returns them at the end (default ~60 × 512² × 4 B ≈ 63 MB — fine). A very long or high-resolution movie (thousands of frames / 2048²) would grow this unboundedly. | Stream frames to disk (or encode incrementally) instead of holding the whole list, if a long/high-res movie is ever needed. Not worth it at current scales. | ⬜ Deferred (forward note) |
+
 ---
 
 *Document status: architecture + staged plan, scoped with the owner on 2026-06-16 (decisions
