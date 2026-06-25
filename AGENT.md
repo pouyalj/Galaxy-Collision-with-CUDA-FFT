@@ -54,7 +54,11 @@
   figures** at 256³ / 10M particles on the M5 Pro CPU (`docs/paper_reproduction.md`) — the gross
   outcome and the 4v↔2v contrast match, though cold-disk numerical heating is significant at this
   resolution (the warm-disk fix is Stage 8) and there is no validated energy conservation at 10M.
-  Next: Stage 5 (CUDA scale-up).
+  **Stage 5 (CUDA scale-up) is now in progress** on an RTX 3070 box: checkpoint **5A is done** —
+  the force chain is device-resident (multigrid moments + conservation diagnostics reduced on
+  the GPU, grid ownership consolidated; RV6/RV10 closed) and the full suite re-passes on CPU
+  **and** CUDA, with a CPU↔CUDA determinism check. Next: 5B (profiling + deposition/solver
+  tuning) → 5C (cuFFT oracle + 100M run). Plan: `docs/stage5_plan.md`.
 - **Goal (scoped):** Rebuild as **one portable source** (Taichi-style kernels compiling to
   CPU + CUDA + Metal), research-grade physics, **10–100M particles**, **Apple GPU as a
   first-class performance target**, with a **pluggable Poisson solver** (open-boundary multigrid
@@ -119,12 +123,13 @@ GalaxyCollision/
     │   ├── ic.py                       # two-galaxy + Plummer initial conditions (Stage 2/3)
     │   ├── deposit.py                  # CIC deposit + grad (−∇Φ) + force gather (Stage 3)
     │   ├── integrator.py              # KDK leapfrog + direct Plummer-softened force (Stage 3)
-    │   ├── diagnostics.py              # energy/momentum/Lagrangian-radius, fp64 (Stage 3)
+    │   ├── diagnostics.py              # energy/momentum/Lagrangian-radius, fp64 host (Stage 3)
+    │   ├── diagnostics_device.py       # device-resident energy/momentum/half-mass reductions (Stage 5/5A)
     │   ├── io.py                       # HDF5/npz snapshot I/O (Stage 3)
     │   ├── solver/                     # base + multigrid (open-BC) + fft_oracle (Stage 3)
     │   └── viz/                        # paper_repro static figures (Stage 4/4B); GGUI/movie = Stage 7
-    ├── tests/                          # config/hello_sim/units/data/ic/deposit/solver_*/integrator/io/sim
-    ├── docs/development.md             # contributor quickstart
+    ├── tests/                          # …/solver_*/integrator/io/sim/determinism + conftest (GALAXY_TEST_ARCH)
+    ├── docs/{development,paper_reproduction,gpu_setup}.md  ·  docs/stage5_plan.md (draft)
     └── legacy/                         # original 2020 CUDA source, preserved for reference
         ├── README.md                   # build notes + bug pointers
         ├── CUDAfft2.0.cu               # 307 lines — FFT-Poisson TEST HARNESS
@@ -310,6 +315,9 @@ nvcc final_draft1.cu -Xcompiler -fopenmp \
 | D16 | Stage-2 IC modeling | **Hernquist bulge (~10% of stellar mass)** + Gaia-profile disk; **same SMBH ≈ 1×10⁸ M☉ in both galaxies**; **cold circular disk** (v_c from softened enclosed mass); disk profile *shape* from paper Eq. 1 **normalized to the mass-derived target** | Owner (2026-06-16). Bulge dispersion + thin-disk rotation are virial/spherical approximations to be validated at Stage 3; per-galaxy distinct masses & warm disk are Stage-8 refinements |
 | D17 | Apple Metal target | **Optimize Metal for the M5 *Pro* tier** (the owner's dev Mac). | Owner (2026-06-21); resolves §9 Q1. This is the in-hand validation/perf-target hardware |
 | D18 | Stage-4 reproduction scope | **Higher-fidelity, CPU-only repro:** 256³ grid, **10–30M particles**, both 4v & 2v over ~400–450 Myr; **headline figures only** (collision density-projection sequence + Sun-like tracer trajectory). Production solver = **multigrid** (portable default, D5); FFT oracle as a spot-check. Done in **three review checkpoints** (4A validation hardening → 4B repro machinery → 4C production runs + write-up). | Owner (2026-06-21). Measured CPU cost (M5 Pro): ~0.6 s/step (multigrid) / ~1.3 s/step (FFT) at 256³; a ~900-step 30M-particle run is ~18 min, so the full repro is CPU-affordable — **no CUDA (Stage 5) dependency**. Static matplotlib figures only; GGUI/movie viz stays Stage 7 |
+| D19 | Stage-5 deposition tuning | **Benchmark all three** CIC scatter strategies (plain `ti.atomic_add`, per-block privatization, sort-by-cell coalescing); keep the fastest. | Owner (2026-06-25). The deposit is the expected hot kernel at 10–100M (§5.6); measuring all three earns the "performance non-negotiable" requirement and feeds the per-stage profile exit gate. |
+| D20 | Stage-5 exit-gate N | **100M particles** on the in-hand 8 GB RTX 3070 (est. ~5.5 GB peak; ~2 GB margin, headless). | Owner (2026-06-25). Keeps the gate aligned with §7 as written; my re-derived footprint (44 B/particle incl. accel fields + ~0.57 GB grid + ~0.5 GB context) shows 100M fits this card. The sort-by-cell deposit variant's scratch (~0.8 GB) is the tight spot — fall back to resident atomics for the headline run if needed (§ `docs/stage5_plan.md`). |
+| D21 | Stage-5 FFT oracle | Add an optional **CuPy cuFFT** GPU path so the oracle validates multigrid at larger N on-device. | Owner (2026-06-25). Optional `cupy-cuda12x` dep; the 512³ pad (~1 GB) loads only at validation N, never co-resident with the 100M run. |
 
 ---
 
@@ -372,6 +380,14 @@ bug #13.)
 
 The **zero-padded FFT oracle** adds a 512³ complex buffer (~1.07 GB) — used only on NVIDIA for
 validation, so it never constrains the Apple/production path.
+
+> **Live-run footprint is larger than the SoA 32 B (RV14, Stage 5).** Beyond the SoA fields,
+> `run_simulation` allocates **three per-particle acceleration fields** (`acc_x/y/z`, +12 B/particle
+> = the gather target / integrator working set), so the *realized* per-particle cost is **~44 B**,
+> not 32 B. With grid (~0.57 GB) + CUDA context (~0.5 GB), the measured peaks are higher than the
+> table's particle-only column: 10M ≈ ~1.5 GB, 30M ≈ ~2.4 GB, **100M ≈ ~5.5 GB** (verified to fit
+> the 8 GB RTX 3070, headless). The table above counts only the SoA bytes; see `docs/stage5_plan.md`
+> §4 for the full live budget used to size the 100M exit-gate run (D20).
 
 **Particle count is derived from physical mass (D8).** Each galaxy's mass (paper value
 M ≈ 2.32×10¹¹ M☉ within 25 kpc) divided by the per-particle mass sets N; the per-particle mass is
@@ -587,7 +603,7 @@ this section is the tracked source of truth).
 | **2 — Initial conditions** | Mass-derived N, disk+bulge sampling, central BH, 4v/2v setups | CPU | ICs match target mass/profile; reproducible from seed | ✅ **Done** (2026-06-16) |
 | **3 — CPU reference (anchor)** | A *correct* sim: CIC + open-BC multigrid + KDK + softening + diagnostics + I/O | CPU | Plummer stays stable; two-body Kepler matches; energy drift < threshold | ✅ **Done** (2026-06-20) |
 | **4 — Validation & FFT oracle** | Zero-padded isolated FFT (✅ Stage 3) + validation hardening (4A) + paper-repro machinery (4B) + production 4v/2v runs & figures (4C) | CPU | Multigrid ≈ FFT within tolerance (✅); paper figures reproduced (✅ *qualitatively* — `docs/paper_reproduction.md`) | ✅ **Done** (2026-06-22) |
-| **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | ⬜ **Prereq:** a CUDA NVIDIA workstation + Taichi CUDA runtime is **not yet set up** (D7) — configure it together as the first task when Stage 5 begins, before any CUDA work |
+| **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | 🟦 **In progress.** Prereq ✅ (CUDA box live: RTX 3070 8 GB, Taichi CUDA verified — see `docs/gpu_setup.md`). Plan = `docs/stage5_plan.md` (5A→5B→5C; decisions D19–D21). **5A ✅** (device-resident force chain + correctness re-pass: RV6, RV10 done; suite green on CPU **and** CUDA via `GALAXY_TEST_ARCH=cuda`; CPU↔CUDA determinism test). 5B (profiling + deposition/solver tuning) and 5C (cuFFT oracle + 100M run + write-up) ⬜ |
 | **6 — Apple / Metal** | First-class Apple GPU, fp32 compute policy | Metal | Cross-backend parity (test 6); perf benchmark vs CUDA | ⬜ |
 | **7 — Visualization & output** | Realtime GGUI, batch→movie, paper figures, tracer particle | all | All four output modes working | ⬜ |
 | **8 — Research campaigns** | 4v/2v studies, central-BH experiments, longer runs | all | Reproduce + extend 2020 results (future hooks: DM halo, TreePM) | ⬜ |
@@ -671,7 +687,7 @@ multigrid ≈ FFT oracle):
 | ID | Area | Finding | Suggested action | Status |
 |---|---|---|---|---|
 | RV5 | Perf (Stage 5) | The open-BC multigrid converges at a healthy but non-optimal ~0.5–0.7/cycle (measured on small/64³ blobs). The power-of-two vertex-centered coarsening puts the coarse far-face a half-cell inside the fine one, which slows (does not break) convergence; correctness comes from the fine-grid operator + multipole BCs, so the converged Φ is right regardless. | Tune at Stage 5 (e.g. proper 2^L+1 nesting or W-cycles/Galerkin coarsening); fine for a CPU reference. | ⬜ Deferred to Stage 5 |
-| RV6 | Perf (Stage 5) | Device-residency gaps for the CPU reference: (a) the multigrid boundary multipole moments (M, CM, quadrupole) are computed host-side in NumPy each solve (a host↔device hop); (b) diagnostics pull full fields to host via `to_numpy()` each sample; (c) grid state is split across owners — `GridState` holds only ρ/Φ, the acceleration grids are allocated ad-hoc in `run_simulation`, and the MG hierarchy lives inside the solver. Clear and correct for the reference, but legacy bug #13 territory. | Move the moment reduction into a Taichi kernel; keep diagnostics device-side (Kahan fp32 on Metal); consolidate grid ownership when chasing device-resident performance. | ⬜ Deferred to Stage 5 |
+| RV6 | Perf (Stage 5) | Device-residency gaps for the CPU reference: (a) the multigrid boundary multipole moments (M, CM, quadrupole) are computed host-side in NumPy each solve (a host↔device hop); (b) diagnostics pull full fields to host via `to_numpy()` each sample; (c) grid state is split across owners — `GridState` holds only ρ/Φ, the acceleration grids are allocated ad-hoc in `run_simulation`, and the MG hierarchy lives inside the solver. Clear and correct for the reference, but legacy bug #13 territory. | Move the moment reduction into a Taichi kernel; keep diagnostics device-side (Kahan fp32 on Metal); consolidate grid ownership when chasing device-resident performance. | ✅ **Done** (2026-06-25, Stage 5/5A) — (a) `multigrid._moments_device` reduces the 10 raw moments on-device (only 10 scalars cross to host; the per-step full-grid `rho.to_numpy()` is gone); (b) `diagnostics_device.DeviceDiagnostics` reduces KE/PE/momentum/ang-mom on-device + half-mass via radial histogram, so a history-only sample copies no full field (f64 accumulators, CUDA/CPU; Metal Kahan-fp32 still Stage 6); (c) `GridState` now owns ρ/Φ + the accel grids (ax/ay/az). Unit-tested vs the host NumPy reference (`tests/test_diagnostics.py`, `tests/test_solver_multigrid.py`). |
 
 Items from the **exit-gate hardening review (2026-06-20)** — the FFT energy gate was found
 realization-fragile; fixed, plus an oracle memory fix and two deferrals logged:
@@ -681,7 +697,7 @@ realization-fragile; fixed, plus an oracle memory fix and two deferrals logged:
 | RV7 | Test robustness | The Plummer exit-gate energy drift was measured with the grid PE (½ΣρΦ·dV), whose fluctuating CIC self-energy term made it realization-fragile — it crossed the 1% gate on ~2/5 seeds (verified). | Gate on the **direct softened pair-sum PE** (softening = 1 cell) instead; ~0.1–0.9% drift across 10 seeds/both solvers, gate < 2%. Grid PE still recorded for production monitoring. | ✅ **Done** (2026-06-20) — `run_simulation(direct_pe_softening=…)`; gate in `tests/test_sim.py`. |
 | RV8 | Perf / memory | `fft_oracle._build_greens_ft` used `np.meshgrid(d,d,d)`, materializing three (2N)³ f64 arrays (~3.2 GB transient at 256³, exceeding the "~1 GB" the §5.2 oracle note implies). | Build the squared-distance grid by broadcasting (one (2N)³ array). | ✅ **Done** (2026-06-20) — broadcasting in `_build_greens_ft`. |
 | RV9 | Test margin (Stage 4) | The multigrid≈FFT-oracle agreement (test 2) sits at ~1.7% vs the 3% cap on a centered Gaussian fixture; fixture-sensitive. (Stage 3 added an off-center case, also ~1.7%.) | Re-derive a principled tolerance and/or add a compact/point-mass multigrid-vs-analytic case at Stage 4. | ✅ **Done** (2026-06-21, 4A) — added `test_multigrid_point_mass_far_field_monopole` (deviation obeys the *derived* 0.26→0.4/r² discrete-Green's law, monotone) + a scale-free `_resid_ratio` convergence gate; the fixture-sensitive MG≈oracle cap is demoted to a documented loose sanity check (the tight checks are convergence + the analytic anchor). |
-| RV10 | Coverage (Stage 5) | Production-scale multigrid (n_cycles=20 @ 256³) has no residual-convergence assertion — only small grids are tested for convergence. | Add a 256³ residual-norm regression once the CUDA path makes it cheap. | ⬜ Deferred to Stage 5 |
+| RV10 | Coverage (Stage 5) | Production-scale multigrid (n_cycles=20 @ 256³) has no residual-convergence assertion — only small grids are tested for convergence. | Add a 256³ residual-norm regression once the CUDA path makes it cheap. | ✅ **Done** (2026-06-25, Stage 5/5A) — `test_multigrid_256_residual_regression`: at 256³/n_cycles=20 the residual ratio is ~2.1e-2 (identical CPU/CUDA to 3 digits), capped at 5e-2 so a stalled coarse-grid correction (~0.29) trips it. |
 | RV11 | Diagnostics (Stage 4) | The grid PE's self-energy offset (RV7) follows into Stage-4 paper-reproduction energy diagnostics on large runs, where the O(N²) direct PE is infeasible. | Use a self-energy-subtracted grid energy estimate (or accept the offset and report drift, not absolute E) for big-run diagnostics. | ✅ **Done** (2026-06-21, 4A) — took the *report-drift* path (evidence-based): probes showed the CIC cloud self-energy is sub-percent while the grid-PE↔direct-PE gap is a ~2–4% *discretization* offset (locked by `tests/test_diagnostics.py`), so a self-energy subtraction would change absolute E by ~0.1% and not shrink the drift. Big-run conservation is the grid-energy **drift** (a *monitoring* metric, not a gate, per RV7) plus the offset-insensitive **virial** ratio (`virial_ratio`/`total_energy_grid` helpers, virial recorded in the run history). |
 
 *Verified good in the same review:* the (kpc, Myr, M☉) unit system and derived G (independently
@@ -694,6 +710,13 @@ Items from the **Stage 4 / 4B review (2026-06-22)** — paper-repro machinery; n
 |---|---|---|---|---|
 | RV12 | Viz units (4B) | The density figures labeled the colorbar `Σ [M☉/kpc²]` but `viz/paper_repro._hist2d` returned mass *per bin*, not per kpc² (off by a constant ~1.4× at the default 300 bins over a 256 kpc box). The image is unaffected (LogNorm), but a paper-comparison figure should plot the labeled quantity. | Divide the histogram by the bin area so it is a true surface density. | ✅ **Done** (2026-06-22) — `_hist2d` divides by the (exact, from edges) bin area; label is now correct, image unchanged. |
 | RV13 | Tracer sampling (4C) | The Sun-like tracer path is recorded at `history_cadence`, so a smooth orbit needs a fine history cadence even when only a few *density* snapshots are wanted — the two samplings are coupled. | If 4C wants a smooth tracer path with sparse density snapshots, decouple by adding a separate `tracer_cadence` to `run_simulation`. Controllable today via `history_cadence`; only worth it if the coupling bites. | ⬜ Deferred (optional, 4C) |
+
+Items from **Stage 5 / 5A (2026-06-25)** — device-residency work; non-blocking:
+
+| ID | Area | Finding | Suggested action | Status |
+|---|---|---|---|---|
+| RV14 | Doc ↔ code (memory) | §5.2's tables count the SoA at 32 B/particle but omit the **three per-particle accel fields** (`acc_x/y/z`, +12 B) that `run_simulation` allocates, so the realized footprint is ~44 B/particle and live peaks exceed the table (100M ≈ ~5.5 GB, not ~3.8 GB). | Note the live footprint in §5.2 and use it to size the 100M run. | ✅ **Done** (2026-06-25, 5A) — §5.2 footnote added; full live budget in `docs/stage5_plan.md` §4 (D20). |
+| RV15 | fp64 portability (Stage 6) | The Stage-5 device reductions (`multigrid._moments_device`, `diagnostics_device`) accumulate in **f64**, which Metal lacks. Correct on CUDA/CPU; a no-op risk until Metal. | At Stage 6 provide a Kahan-fp32 reduction path (already flagged in D6 and both modules' docstrings). | ⬜ Deferred to Stage 6 |
 
 ---
 

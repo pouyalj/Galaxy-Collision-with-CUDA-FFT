@@ -228,6 +228,7 @@ def run_simulation(
     from galaxy_collision import ic as ic_mod
     from galaxy_collision.data import GridState, ParticleState
     from galaxy_collision.deposit import deposit_density, gather_acceleration, potential_to_accel
+    from galaxy_collision.diagnostics_device import DeviceDiagnostics
     from galaxy_collision.integrator import kdk_step
     from galaxy_collision.io import snapshot_from_states, write_snapshot
     from galaxy_collision.solver import make_solver
@@ -254,16 +255,19 @@ def run_simulation(
     ic_mod.load_into_particle_state(icr, parts)
     grid = GridState(gsize)
 
+    # Per-particle acceleration (gather target + the integrator's working set).
     acc_x = ti.field(ti.f32, shape=n)
     acc_y = ti.field(ti.f32, shape=n)
     acc_z = ti.field(ti.f32, shape=n)
-    ax_g = ti.field(ti.f32, shape=(gsize, gsize, gsize))
-    ay_g = ti.field(ti.f32, shape=(gsize, gsize, gsize))
-    az_g = ti.field(ti.f32, shape=(gsize, gsize, gsize))
+    # Node acceleration field g = −∇Φ now lives on the GridState (RV6c).
+    ax_g, ay_g, az_g = grid.ax, grid.ay, grid.az
 
     solver = make_solver(
         config.solver, gsize, dx=DX, grav_constant=units.G, **(solver_kwargs or {})
     )
+    # Device-resident conservation diagnostics (RV6b). Allocate its scratch fields here,
+    # before any kernel launch (equilibration below), per Taichi's field-creation rule.
+    dev_diag = DeviceDiagnostics(gsize)
 
     # Launch each disk in equilibrium with the PM grid force (not an analytic-softening guess):
     # measure the grid's own rotation curve and set the disk velocities from it (§5.5 / D18).
@@ -287,39 +291,48 @@ def run_simulation(
 
     accel_fn()  # prime: the main loop owns the single accel/positions reconciliation point
 
-    mass_np = parts.mass.to_numpy().astype(np.float64)
+    # Host-side mass is only needed by the O(N²) direct-PE path (small-N validation); at
+    # production scale we never pull the full mass array to the host.
+    mass_np = parts.mass.to_numpy().astype(np.float64) if direct_pe_softening is not None else None
+
+    def _read_tracer_positions() -> np.ndarray:
+        # A handful of tracers — read their components directly (tiny per-element device reads)
+        # rather than copying the full position arrays.
+        return np.array(
+            [[parts.pos_x[i], parts.pos_y[i], parts.pos_z[i]] for i in tracer_idx],
+            dtype=np.float64,
+        )
 
     def measure(step: int) -> dict[str, Any]:
-        pos = np.stack(
-            [parts.pos_x.to_numpy(), parts.pos_y.to_numpy(), parts.pos_z.to_numpy()], axis=1
-        ).astype(np.float64)
-        vel = np.stack(
-            [parts.vel_x.to_numpy(), parts.vel_y.to_numpy(), parts.vel_z.to_numpy()], axis=1
-        ).astype(np.float64)
-        ke = diagnostics.kinetic_energy(mass_np, vel)
-        pe = diagnostics.potential_energy_grid(grid.rho.to_numpy(), grid.phi.to_numpy(), DX)
+        # Energy / momentum / half-mass reduced on the device (RV6b): a history-only sample
+        # copies nothing larger than the radial histogram — no full pos/vel/grid to_numpy.
+        d = dev_diag.sample(parts, grid, DX)
+        ke, pe = d["kinetic"], d["potential"]
         rec = {
             "step": step,
             "time": step * config.dt,
-            "energy": ke + pe,
+            "energy": d["energy"],
             "kinetic": ke,
             "potential": pe,
-            "momentum": diagnostics.linear_momentum(mass_np, vel),
-            "ang_momentum": diagnostics.angular_momentum(mass_np, pos, vel),
-            "half_mass_radius": diagnostics.lagrangian_radius(mass_np, pos, 0.5),
+            "momentum": d["momentum"],
+            "ang_momentum": d["ang_momentum"],
+            "half_mass_radius": d["half_mass_radius"],
             # Offset-insensitive supporting conservation metric for big runs (RV11). For a
             # collision this is a consistency monitor (it includes bulk approach KE), not a
             # fixed-½ gate.
             "virial": diagnostics.virial_ratio(ke, pe),
         }
         if direct_pe_softening is not None:
+            pos = np.stack(
+                [parts.pos_x.to_numpy(), parts.pos_y.to_numpy(), parts.pos_z.to_numpy()], axis=1
+            ).astype(np.float64)
             pe_d = diagnostics.potential_energy_direct(
                 mass_np, pos, softening=direct_pe_softening, grav=units.G
             )
             rec["potential_direct"] = pe_d
             rec["energy_direct"] = ke + pe_d
         if tracer_idx is not None:
-            rec["tracer_pos"] = pos[tracer_idx]  # (n_tracers, 3); fancy-index already copies
+            rec["tracer_pos"] = _read_tracer_positions()  # (n_tracers, 3)
         return rec
 
     hist_cad = history_cadence or max(1, config.steps // 20)

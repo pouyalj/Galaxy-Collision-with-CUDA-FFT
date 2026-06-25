@@ -20,9 +20,14 @@ half-cell inside the fine one; harmless, per the paragraph above (the error ther
 ~0 under homogeneous Dirichlet BCs). Smoother: red-black Gauss-Seidel. Restriction:
 full weighting. Prolongation: trilinear.
 
-The boundary moments (M, center of mass, quadrupole) are computed on the host in NumPy
-— cheap (once per solve) and far clearer than a Taichi reduction. Making the whole
-solve device-resident is a Stage-5 concern (AGENT.md bug #13); here correctness leads.
+The boundary moments (M, center of mass, quadrupole) are reduced **on the device** by
+``_accumulate_moments`` (Stage 5 / RV6a): a single pass over ``rho`` accumulates the ten
+raw sums (M, Σm·r, Σm·rₐr_b) into a tiny f64 buffer, and only those 10 scalars cross to
+the host for the cheap center-of-mass / second-moment arithmetic. This removes the
+per-step full-grid ``rho.to_numpy()`` copy the Stage-3 reference did (legacy bug #13).
+The f64 accumulation is CUDA/CPU-only; a Metal-safe fp32/Kahan reduction is a Stage-6
+concern (Metal has no hardware fp64). The pure-NumPy ``_moments`` is retained as the
+reference the device path is unit-tested against.
 """
 
 import numpy as np
@@ -124,6 +129,37 @@ def _prolong_add(phi_c: ti.template(), phi_f: ti.template(), nf: ti.i32):
 
 
 @ti.kernel
+def _accumulate_moments(rho: ti.template(), n: ti.i32, dx: ti.f32, out: ti.template()):
+    """One-pass device reduction of the 10 raw mass moments into ``out`` (f64, length 10).
+
+    Layout: ``out = [M, Σmx, Σmy, Σmz, Σmx², Σmy², Σmz², Σmxy, Σmxz, Σmyz]`` where
+    ``m = rho·dx³`` is the cell mass and ``(x,y,z) = (i,j,k)·dx`` the node position. The
+    host turns these into the center of mass and the second moments about it (parallel-axis).
+    Reductions target ``out[c]`` at compile-time-constant indices so Taichi can thread-local
+    them; f64 keeps the 256³-cell sum accurate (Σ over ~1.7e7 cells), matching the NumPy
+    reference. f64 is CUDA/CPU only — see the module docstring (Metal = Stage 6).
+    """
+    for c in range(10):
+        out[c] = 0.0
+    vol = ti.cast(dx, ti.f64) ** 3
+    for i, j, k in ti.ndrange(n, n, n):
+        m = ti.cast(rho[i, j, k], ti.f64) * vol
+        x = ti.cast(i, ti.f64) * dx
+        y = ti.cast(j, ti.f64) * dx
+        z = ti.cast(k, ti.f64) * dx
+        out[0] += m
+        out[1] += m * x
+        out[2] += m * y
+        out[3] += m * z
+        out[4] += m * x * x
+        out[5] += m * y * y
+        out[6] += m * z * z
+        out[7] += m * x * y
+        out[8] += m * x * z
+        out[9] += m * y * z
+
+
+@ti.kernel
 def _zero(field: ti.template()):
     for idx in ti.grouped(field):
         field[idx] = 0.0
@@ -212,10 +248,38 @@ class MultigridPoissonSolver(PoissonSolver):
         self.rhs = [ti.field(ti.f32, shape=(s, s, s)) for s in sizes]
         self.res = [ti.field(ti.f32, shape=(s, s, s)) for s in sizes]
 
-    # --- boundary moments (host NumPy) ------------------------------------------
+        # Device-resident accumulator for the 10 raw boundary moments (RV6a). f64 so the
+        # 256³ sum stays accurate; CUDA/CPU only (Metal = Stage 6).
+        self._moment_buf = ti.field(ti.f64, shape=10)
+
+    # --- boundary moments -------------------------------------------------------
+
+    def _moments_device(self, rho):
+        """Device reduction of the boundary moments from the live ``rho`` field (RV6a).
+
+        Returns the same ``(M, (cx,cy,cz), (sxx,syy,szz,sxy,sxz,syz))`` tuple as
+        :meth:`_moments`, but reduces on the device and copies only 10 scalars to the host —
+        no per-step full-grid ``to_numpy``.
+        """
+        _accumulate_moments(rho, self.grid_size, self.dx, self._moment_buf)
+        s = self._moment_buf.to_numpy()  # 10 f64 scalars
+        total = float(s[0])
+        if total <= 0.0:
+            return 0.0, (0.0, 0.0, 0.0), (0.0,) * 6
+        cx, cy, cz = s[1] / total, s[2] / total, s[3] / total
+        # Second moments about the CM via parallel-axis: S_ab = Σm·a·b − M·c_a·c_b.
+        sxx = float(s[4] - total * cx * cx)
+        syy = float(s[5] - total * cy * cy)
+        szz = float(s[6] - total * cz * cz)
+        sxy = float(s[7] - total * cx * cy)
+        sxz = float(s[8] - total * cx * cz)
+        syz = float(s[9] - total * cy * cz)
+        return total, (float(cx), float(cy), float(cz)), (sxx, syy, szz, sxy, sxz, syz)
 
     def _moments(self, rho_np: np.ndarray):
-        """Return (M, CM, S_ab) of the mass about its center of mass (internal units)."""
+        """Reference (host NumPy) moments — kept to unit-test :meth:`_moments_device`.
+
+        Returns (M, CM, S_ab) of the mass about its center of mass (internal units)."""
         n, dx = self.grid_size, self.dx
         mass = rho_np * dx**3
         total = float(mass.sum())
@@ -266,8 +330,9 @@ class MultigridPoissonSolver(PoissonSolver):
     # --- public API -------------------------------------------------------------
 
     def solve(self, rho, phi, warm_start: bool = False) -> None:
-        rho_np = rho.to_numpy().astype(np.float64)
-        total, (cx, cy, cz), (sxx, syy, szz, sxy, sxz, syz) = self._moments(rho_np)
+        # Boundary moments reduced on the device (RV6a) — only 10 scalars cross to the host,
+        # not the full 256³ grid as the Stage-3 reference did.
+        total, (cx, cy, cz), (sxx, syy, szz, sxy, sxz, syz) = self._moments_device(rho)
 
         # Finest RHS = 4πG ρ. Initial interior guess: reuse `phi` from the previous step
         # (warm start, fast in a time loop) or cold-start at 0. Faces are always (re)set

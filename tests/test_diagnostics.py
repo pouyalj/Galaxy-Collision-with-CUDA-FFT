@@ -102,3 +102,52 @@ def test_total_energy_grid_and_virial():
     assert diagnostics.total_energy_grid(m, vel, rho_np, phi_np, dx) == pytest.approx(ke + pe)
     # A sampled Plummer sphere is in virial equilibrium: T/|W| ≈ 0.5.
     assert diagnostics.virial_ratio(ke, pe) == pytest.approx(0.5, abs=0.1)
+
+
+def test_device_diagnostics_match_host_reference():
+    """RV6b: the device-resident reductions must reproduce the host fp64 diagnostics.
+
+    KE / grid-PE / linear & angular momentum are exact reductions (agree to fp64 round-off);
+    the half-mass radius comes from a radial histogram + linear interpolation, so it agrees
+    with the exact sorted host value to well under a percent.
+    """
+    pytest.importorskip("taichi", reason="Taichi not installed")
+    import taichi as ti
+
+    from galaxy_collision.config import SimConfig
+    from galaxy_collision.data import GridState, ParticleState
+    from galaxy_collision.deposit import deposit_density
+    from galaxy_collision.diagnostics_device import DeviceDiagnostics
+    from galaxy_collision.ic import PlummerModel, build_plummer_ic, load_into_particle_state
+    from galaxy_collision.solver import make_solver
+
+    ti.init(arch=ti.cpu)
+    gs, dx = 64, 1.0
+    c = gs / 2.0
+    cfg = SimConfig(ic_preset="plummer", grid_size=gs, n_particles=8000, seed=11)
+    icr = build_plummer_ic(cfg, model=PlummerModel(total_mass=2.0e10, scale_a=4.0,
+                                                   center=(c, c, c)))
+    parts = ParticleState(icr.n)
+    load_into_particle_state(icr, parts)
+    grid = GridState(gs)
+    deposit_density(parts, grid.rho, dx)
+    make_solver("fft", gs, dx=dx, grav_constant=units.G).solve(grid.rho, grid.phi)
+
+    dev = DeviceDiagnostics(gs).sample(parts, grid, dx)
+
+    m = icr.mass.astype(np.float64)
+    pos, vel = icr.pos.astype(np.float64), icr.vel.astype(np.float64)
+    assert dev["kinetic"] == pytest.approx(diagnostics.kinetic_energy(m, vel), rel=1e-9)
+    assert dev["potential"] == pytest.approx(
+        diagnostics.potential_energy_grid(grid.rho.to_numpy(), grid.phi.to_numpy(), dx), rel=1e-9
+    )
+    # Vector reductions: device vs NumPy differ only by fp64 summation order (parallel
+    # tree-reduction vs sequential), which shows up in near-zero, cancellation-heavy
+    # components — so compare at 1e-6, not machine epsilon.
+    np.testing.assert_allclose(dev["momentum"], diagnostics.linear_momentum(m, vel), rtol=1e-6)
+    np.testing.assert_allclose(
+        dev["ang_momentum"], diagnostics.angular_momentum(m, pos, vel), rtol=1e-6
+    )
+    assert dev["half_mass_radius"] == pytest.approx(
+        diagnostics.lagrangian_radius(m, pos, 0.5), rel=5e-3
+    )

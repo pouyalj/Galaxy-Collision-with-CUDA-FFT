@@ -31,6 +31,7 @@ def test_backend_honored(requested, resolved, expected):
     assert _backend_honored(requested, resolved) is expected
 
 
+@pytest.mark.fixed_arch  # this test's whole point is CPU reporting — don't redirect it
 def test_init_backend_reports_cpu_device():
     pytest.importorskip("taichi", reason="Taichi not installed")
     from galaxy_collision.config import SimConfig

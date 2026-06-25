@@ -114,7 +114,14 @@ class ParticleState:
 
 
 class GridState:
-    """SoA grid fields (density rho, potential phi). Requires ``ti.init`` first."""
+    """SoA grid fields: density ``rho``, potential ``phi``, and the node acceleration field
+    ``g = −∇Φ`` (``ax``/``ay``/``az``). Requires ``ti.init`` first.
+
+    Owning the acceleration grids here (Stage 5 / RV6c) gives every per-step grid field a
+    single device-resident owner — previously ``ax``/``ay``/``az`` were allocated ad-hoc
+    inside ``run_simulation``. The multigrid hierarchy still lives inside the solver. This
+    matches the ``_GRID_FIELDS`` memory accounting (rho + phi + 3 accel + hierarchy).
+    """
 
     def __init__(self, grid_size: int = 256):
         import taichi as ti
@@ -122,8 +129,13 @@ class GridState:
         if grid_size <= 0:
             raise ValueError(f"grid_size must be positive, got {grid_size}")
         self.grid_size = grid_size
-        self.rho = ti.field(dtype=ti.f32, shape=(grid_size, grid_size, grid_size))
-        self.phi = ti.field(dtype=ti.f32, shape=(grid_size, grid_size, grid_size))
+        shape = (grid_size, grid_size, grid_size)
+        self.rho = ti.field(dtype=ti.f32, shape=shape)
+        self.phi = ti.field(dtype=ti.f32, shape=shape)
+        # Node acceleration field g = −∇Φ (filled by deposit.potential_to_accel).
+        self.ax = ti.field(dtype=ti.f32, shape=shape)
+        self.ay = ti.field(dtype=ti.f32, shape=shape)
+        self.az = ti.field(dtype=ti.f32, shape=shape)
 
 
 __all__ = [

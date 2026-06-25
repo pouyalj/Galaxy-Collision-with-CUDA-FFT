@@ -21,8 +21,13 @@ physics at 10–100M particles.
 > collisions at 256³ / 10M particles plus the Sun-like tracer path, via the `paper-repro` CLI
 > ([`docs/paper_reproduction.md`](docs/paper_reproduction.md); the gross outcome and 4v↔2v contrast
 > match, with significant cold-disk numerical heating at this resolution — a warm disk is a later
-> refinement). Next is Stage 5 (CUDA scale-up to 100M+). See [`AGENT.md`](AGENT.md) for the full
-> architecture and staged plan, and [`docs/development.md`](docs/development.md) to get started.
+> refinement). **Stage 5 (CUDA scale-up) is now in progress** on an RTX 3070: checkpoint 5A is
+> done — the force chain runs device-resident on the GPU (Poisson-boundary moments + conservation
+> diagnostics reduced on-device, grid ownership consolidated), and the full test suite re-passes
+> on both CPU and CUDA. Next: deposition/solver profiling, then a 100M-particle run. See
+> [`AGENT.md`](AGENT.md) for the full architecture and staged plan,
+> [`docs/stage5_plan.md`](docs/stage5_plan.md) for the Stage-5 plan, and
+> [`docs/development.md`](docs/development.md) to get started.
 
 ## Quickstart
 

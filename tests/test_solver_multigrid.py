@@ -70,6 +70,31 @@ def test_vcycle_reduces_residual():
     assert r2 < 0.1 * r1
 
 
+def test_multigrid_256_residual_regression():
+    """RV10: the production cycle count drives the **256³** residual well below its RHS norm.
+
+    Only small grids (≤64³) were previously checked for convergence; this guards the
+    full-resolution production solve. Measured ``resid_ratio ≈ 2.1e-2`` at ``n_cycles=20``
+    (identical on CPU and CUDA to three digits); we cap at ``5e-2`` (~2.4× margin), so a
+    stalled coarse-grid correction — which plateaus near 0.29 on this source (i.e. the
+    n_cycles=10 level) — trips the gate. Cheap on CUDA; ~10 s on CPU.
+    """
+    pytest.importorskip("taichi", reason="Taichi not installed")
+    import taichi as ti
+
+    from galaxy_collision.solver.multigrid import MultigridPoissonSolver
+
+    ti.init(arch=ti.cpu)
+    n, dx = 256, 1.0
+    rho = _gaussian_rho(ti, n, dx, sigma=8.0, total_mass=2.32e11)
+    rho_np = rho.to_numpy()
+    phi = ti.field(ti.f32, shape=(n, n, n))
+
+    solver = MultigridPoissonSolver(n, dx=dx, n_cycles=20)
+    solver.solve(rho, phi)
+    assert _resid_ratio(solver, rho_np, units.G, dx) < 5e-2
+
+
 def test_multigrid_point_mass_far_field_monopole():
     """Analytic anchor (RV9): multigrid's potential → −GM/r with the *derived* O((dx/r)²)
     discrete-Green's-function error, decreasing monotonically. This pins multigrid to ground
@@ -180,6 +205,38 @@ def test_multigrid_matches_fft_oracle_off_center():
     core = (slice(m, n - m),) * 3
     rel_max = np.abs(a[core] - b[core]).max() / np.abs(b).max()
     assert rel_max < 0.03, f"off-center peak-relative deviation {rel_max:.4f} exceeds 3%"
+
+
+def test_moments_device_matches_numpy_reference():
+    """RV6a: the device moment reduction must reproduce the host NumPy reference.
+
+    ``solve`` sets the open-BC Dirichlet faces from these moments, so the device path that
+    removed the per-step ``rho.to_numpy()`` must agree with the original NumPy reduction. We
+    use an off-center, multi-lump mass so all ten raw sums (M, CM, the six second moments)
+    are nonzero and a swapped/zeroed term would show up.
+    """
+    pytest.importorskip("taichi", reason="Taichi not installed")
+    import taichi as ti
+
+    from galaxy_collision.solver.multigrid import MultigridPoissonSolver
+
+    ti.init(arch=ti.cpu)
+    n, dx = 64, 1.0
+    axis = np.arange(n) * dx
+    xx, yy, zz = np.meshgrid(axis, axis, axis, indexing="ij")
+    blob = np.exp(-((xx - 20) ** 2 + (yy - 34) ** 2 + (zz - 28) ** 2) / (2 * 6.0**2))
+    blob += 0.5 * np.exp(-((xx - 44) ** 2 + (yy - 30) ** 2 + (zz - 36) ** 2) / (2 * 4.0**2))
+    rho_np = (blob / blob.sum() * 3.2e11 / dx**3).astype(np.float32)
+    rho = ti.field(ti.f32, shape=(n, n, n))
+    rho.from_numpy(rho_np)
+
+    solver = MultigridPoissonSolver(n, dx=dx)
+    m_dev, cm_dev, s_dev = solver._moments_device(rho)
+    m_ref, cm_ref, s_ref = solver._moments(rho_np.astype(np.float64))
+
+    assert m_dev == pytest.approx(m_ref, rel=1e-5)
+    np.testing.assert_allclose(cm_dev, cm_ref, rtol=1e-5)
+    np.testing.assert_allclose(s_dev, s_ref, rtol=1e-4)
 
 
 def test_solver_factory():

@@ -35,6 +35,19 @@ pytest         # config + smoke tests (the Taichi test self-skips without Taichi
 hello-sim --backend cpu
 ```
 
+### Re-running the suite on a GPU backend
+
+The physics/solver tests pin Taichi to CPU for portable CI. To re-pass the same suite on a GPU
+(AGENT.md §7 requires this for Stages 5/6), set `GALAXY_TEST_ARCH` — a `conftest.py` fixture
+redirects the per-test `ti.init` onto that backend:
+
+```bash
+GALAXY_TEST_ARCH=cuda pytest -q     # or: metal
+```
+
+Tests whose purpose is a specific backend's reporting/fallback semantics, or that compare two
+backends, opt out with `@pytest.mark.fixed_arch`.
+
 ## Layout
 
 ```
