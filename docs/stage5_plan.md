@@ -70,7 +70,8 @@ Stage 5 also closes deferred review items **RV5, RV6, RV10** and partially advan
 > `diagnostics_device.DeviceDiagnostics` — KE/PE/momentum/ang-mom + half-mass (radial histogram)
 > reduced on-device; `measure()` copies no full field on a history-only sample. (4)
 > `test_multigrid_256_residual_regression` (RV10). (5) `tests/test_determinism.py` — CPU↔CUDA
-> tracer paths are bit-identical over the test horizon. (6) `GALAXY_TEST_ARCH` conftest override →
+> tracer paths agree to fp32 tolerance (≤1e-3 kpc; observed exact here, but bitwise agreement is
+> not asserted — see the test docstring). (6) `GALAXY_TEST_ARCH` conftest override →
 > **122 tests pass on CPU and on CUDA**; ruff clean. RV6/RV10 closed; RV14/RV15 logged in AGENT.md §11.
 
 ### 5B — Performance: profiling + deposition + solver tuning

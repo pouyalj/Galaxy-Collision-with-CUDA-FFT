@@ -65,14 +65,16 @@ def _reduce_particle_scalars(
 
 
 @ti.kernel
-def _reduce_grid_pe(rho: ti.template(), phi: ti.template(), n: ti.i32, dx: ti.f32,
-                    out: ti.template()):
-    """PM grid potential energy ½ Σ ρΦ·dx³ as a single f64 reduction into ``out[0]``."""
+def _reduce_grid_pe(rho: ti.template(), phi: ti.template(), n: ti.i32, out: ti.template()):
+    """Raw Σ ρΦ as a single f64 reduction into ``out[0]``.
+
+    The ½·dx³ factor of the grid PE ½ΣρΦ·dx³ is applied host-side in :meth:`sample`, so this
+    kernel is purely the reduction (no trailing scalar op to reason about). f64 accumulator —
+    see the module docstring; summation order is non-deterministic across launches/backends, so
+    it is exact only to fp64 round-off (immaterial under the run tolerances)."""
     out[0] = 0.0
-    half_vol = 0.5 * ti.cast(dx, ti.f64) ** 3
     for i, j, k in ti.ndrange(n, n, n):
         out[0] += ti.cast(rho[i, j, k], ti.f64) * ti.cast(phi[i, j, k], ti.f64)
-    out[0] *= half_vol
 
 
 @ti.kernel
@@ -123,6 +125,10 @@ class DeviceDiagnostics:
         # Cover the whole box (+ a margin for particles that drift outside) so every particle
         # lands in a real bin; the box diagonal is the natural cap.
         self.r_max = float(r_max) if r_max is not None else float(grid_size) * np.sqrt(3.0)
+        # Bin width sets the half-mass resolution (linear interpolation gives sub-bin accuracy).
+        # At 256³/2048 bins this is ~0.22 kpc — fine for galaxy/Plummer half-mass radii of tens
+        # of kpc, but a sub-kpc-half-mass object would need more bins (or a smaller r_max). Unlike
+        # the host `lagrangian_radius`, this trades a hair of exactness (binning) for residency.
         self.binw = self.r_max / nbins
         self._pbuf = ti.field(ti.f64, shape=_PSCALARS)
         self._gbuf = ti.field(ti.f64, shape=1)
@@ -159,8 +165,9 @@ class DeviceDiagnostics:
             parts.vel_x, parts.vel_y, parts.vel_z, parts.mass, parts.n, self._pbuf,
         )
         s = self._pbuf.to_numpy()
-        _reduce_grid_pe(grid.rho, grid.phi, self.grid_size, float(dx), self._gbuf)
-        pe = float(self._gbuf.to_numpy()[0])
+        _reduce_grid_pe(grid.rho, grid.phi, self.grid_size, self._gbuf)
+        # Apply the ½·dx³ factor here (host-side) — the kernel returns the raw Σ ρΦ.
+        pe = 0.5 * float(dx) ** 3 * float(self._gbuf.to_numpy()[0])
 
         total = float(s[0])
         ke = float(s[1])

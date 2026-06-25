@@ -41,10 +41,14 @@ def _run(backend: str, steps: int):
 def test_cpu_cuda_trajectories_agree():
     """Same IC+seed on CPU and CUDA: tracer trajectories agree to fp32 tolerance.
 
-    Observed on the RTX 3070 dev box: the fp32 tracer paths are *bit-identical* to the CPU
-    run over this horizon (Taichi's CIC scatter + multigrid reductions are deterministic
-    here), so the 1e-3 kpc cap is loose headroom for fp32 reduction-order differences — a
-    genuinely divergent CUDA kernel would miss by kpc, not microns.
+    The guarantee asserted here is *physics-level* agreement — ‖Δpos‖ ≤ 1e-3 kpc over a short,
+    pre-chaotic horizon — not bitwise equality. We happened to observe exact (Δ=0) agreement on
+    this RTX 3070 / x86 pair at this scale, but that is **not** relied on: parallel atomic deposit
+    + tree reductions have a non-deterministic summation order, and CPU vs GPU sqrt/div/FMA can
+    round differently, so exact agreement will generally break at larger N, on other hardware, or
+    across Taichi versions. The 1e-3 kpc cap is deliberately loose headroom for that fp32 round-off
+    — a genuinely divergent CUDA kernel would miss by kpc, not microns; the short horizon keeps
+    chaotic N-body amplification from inflating round-off.
     """
     if not _cuda_available():
         pytest.skip("no CUDA device available")
