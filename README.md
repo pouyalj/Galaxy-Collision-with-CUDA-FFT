@@ -31,7 +31,7 @@ GPU from the same kernels via [Taichi](https://www.taichi-lang.org/).
 - **See it move** — a realtime GPU viewer (`galaxy-view`: live 3D points + a 2D density mode, orbit
   camera, pause/step/restart; runs on Metal), a **headless web stream** (`galaxy-serve`: watch a
   remote/headless run live in a browser via a link), and a batch→movie encoder (`galaxy-movie`:
-  device-projected density frames → MP4/GIF), alongside the static paper-figure reproduction.
+  2D-density **or** 3D-particle frames → MP4/GIF), alongside the static paper-figure reproduction.
 
 > **Status:** Stages 0–7 complete (correct CPU reference → paper reproduction → CUDA scale-up →
 > Apple/Metal as a first-class backend → visualization: realtime GGUI viewer, batch→movie, snapshots,
@@ -101,7 +101,7 @@ Installing the package (`pip install -e .`) puts seven commands on your `PATH`. 
 | `galaxy-sim` | Runs the full PM N-body pipeline from a YAML config; writes HDF5/npz snapshots + diagnostics. |
 | `galaxy-view` | **Live 3D/2D viewer** — opens a window and animates the collision on the GPU as it runs (needs a display). |
 | `galaxy-serve` | **Live web view** — streams the collision over HTTP so a **headless** run is watchable in a browser via a link. Needs the `viz` extra. |
-| `galaxy-movie` | Runs a collision and encodes a density-projection **movie** (MP4/GIF). Headless. Needs the `viz` extra. |
+| `galaxy-movie` | Runs a collision and encodes a **movie** (MP4/GIF) — 2D density (`--view density`) or 3D particles (`--view particles`). Headless. Needs the `viz` extra. |
 | `paper-repro` | Runs a two-galaxy collision and renders the paper's density-projection + Sun-like-tracer figures. |
 | `galaxy-bench` | Times the force chain (throughput + per-stage profile). No physics output — a speed test. |
 
@@ -168,12 +168,22 @@ ssh -N -L 8080:localhost:8080 user@box                         # from your lapto
 
 The browser page has pause/speed/plane buttons. See [`docs/visualization.md`](docs/visualization.md).
 
-**`galaxy-movie`** runs a collision and encodes a density-projection movie (needs the `viz` extra).
-Key flags: **`--config`**, **`--backend`**, **`--n INT`** (particle count, overriding the config —
-e.g. `--n 100000000`), **`--frame-cadence INT`** (steps between frames), **`--bins INT`** (frame
-resolution), **`--axes {xy,xz,yz}`** (projection plane), **`--fps INT`**, **`--out PATH`**
-(`.mp4`/`.gif`), **`--panel PATH`** (also save the final frame as a PNG). Run
+**`galaxy-movie`** runs a collision and encodes a movie (needs the `viz` extra). It can render
+either view, with **`--view`**:
+- **`--view density`** (default) — the 2D surface-density projection.
+- **`--view particles`** — a **3D point cloud**, the same look as `galaxy-view`'s 3D mode (rendered
+  headless via offscreen GGUI; MW blue / Andromeda orange).
+
+Key flags: **`--config`**, **`--view {density,particles}`**, **`--backend`**, **`--n INT`** (particle
+count, overriding the config — e.g. `--n 100000000`), **`--frame-cadence INT`** (steps between
+frames), **`--fps INT`**, **`--out PATH`** (`.mp4`/`.gif`), **`--panel PATH`** (also save the final
+frame as a PNG). 2D-only: **`--bins INT`** (resolution), **`--axes {xy,xz,yz}`** (plane). 3D-only:
+**`--max-points INT`** (drawn-point cap), **`--radius FLOAT`** (point size). Run
 `galaxy-movie --help` for the full list.
+
+```bash
+galaxy-movie --config configs/paper_4v.yaml --backend cuda --view particles --out collision_3d.mp4
+```
 
 ### Config file settings (YAML)
 

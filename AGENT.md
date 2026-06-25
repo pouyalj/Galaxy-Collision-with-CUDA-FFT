@@ -519,10 +519,12 @@ portable (the one thing a plain FFT is not under Taichi) and physically correct 
   context needed. Takes `--n` to override the config's particle count (e.g. `--n 100000000` to
   stream a 100M run off a 10M paper config), plus `--backend`/`--bins`/`--steps-per-frame`/`--fps`.
   *(✅ Stage-7 follow-on; browser pause/speed/plane controls.)*
-- **Batch → movie:** headless run projects density frames on the device → MP4/GIF via
-  `imageio-ffmpeg`. **Replaces DISLIN entirely.** Takes `--n` to override the config's particle
-  count (e.g. `--n 100000000`), plus `--frame-cadence`/`--bins`/`--axes`/`--fps`/`--out`/`--panel`.
-  *(✅ 7A `viz/movie.py`; ~1 MB/frame, no snapshot bloat.)*
+- **Batch → movie:** headless run → MP4/GIF via `imageio-ffmpeg`. **Replaces DISLIN entirely.**
+  Two looks via `--view`: **density** (default; device 2D projection, ~1 MB/frame, no snapshot
+  bloat) or **particles** (a 3D point cloud like `galaxy-view`'s 3D mode, rendered headless via the
+  viewer's **offscreen GGUI** path — confirmed working on the CUDA box's Vulkan). Takes `--n` to
+  override the particle count, plus `--frame-cadence`/`--fps`/`--out`/`--panel` (density:
+  `--bins`/`--axes`; 3D: `--max-points`/`--radius`). *(✅ 7A `viz/movie.py`; 3D view added 2026-06-25.)*
 - **Data + analysis:** periodic snapshots to **HDF5** (or `.npz`) — positions, velocities, ρ, Φ,
   and diagnostics — for offline plotting/analysis. *(✅ Stage 3 `io.py`.)*
 - **Reproduce the paper:** a script that recreates the density-projection panels and the

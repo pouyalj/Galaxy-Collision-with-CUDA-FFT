@@ -7,7 +7,7 @@ here (snapshots, paper figures); Stage 7 added the **movie** and the **realtime 
 |---|---|---|---|
 | Realtime 3D/2D viewer | `galaxy-view` | No — needs a display | **Mac/desktop** (Metal) |
 | **Live web view (browser link)** | `galaxy-serve` | **Yes** — streams over HTTP | **headless box** (e.g. CUDA) |
-| Batch → movie (MP4/GIF) | `galaxy-movie` | Yes | CUDA (faster at scale) or Mac |
+| Batch → movie (MP4/GIF), 2D density or 3D particles | `galaxy-movie` | Yes | CUDA (faster at scale) or Mac |
 | Data snapshots (HDF5/npz) | `galaxy-sim` | Yes | anywhere |
 | Paper-figure reproduction | `paper-repro` | Yes | anywhere |
 
@@ -84,23 +84,32 @@ is a *view* of the 2D projection, not the interactive 3D window (that's `galaxy-
 
 ## 2. Batch → movie — `galaxy-movie`
 
-Runs a collision headless and encodes a density-projection **movie**. Needs the `viz` extra:
+Runs a collision headless and encodes a **movie** — either the 2D density projection (default) or a
+3D point cloud (`--view particles`). Needs the `viz` extra:
 
 ```bash
 pip install -e ".[viz]"          # imageio + imageio-ffmpeg (bundles ffmpeg — no system install)
 galaxy-movie --config configs/paper_4v.yaml --backend cuda --frame-cadence 5 --out collision.mp4
 galaxy-movie --config configs/paper_4v.yaml --frame-cadence 5 --out collision.gif --panel final.png
 galaxy-movie --config configs/paper_4v.yaml --backend cuda --n 100000000 --out collision_100M.mp4
+galaxy-movie --config configs/paper_4v.yaml --backend cuda --view particles --out collision_3d.mp4
 ```
 
-Each frame is the device 2D projection → matplotlib `LogNorm` (one global color scale across the
-whole movie, so brightness is comparable frame-to-frame, matching `paper_repro`'s surface-density
-convention) → encoded to **MP4 or GIF** (by the `--out` extension). `--panel PATH` also saves the
-final frame as a standalone PNG.
+**`--view density`** (default): each frame is the device 2D projection → matplotlib `LogNorm` (one
+global color scale across the whole movie, so brightness is comparable frame-to-frame, matching
+`paper_repro`'s surface-density convention).
 
-**Flags:** `--config` `--backend` `--n` (particle count, overriding the config) `--frame-cadence`
-(steps between frames) `--bins` (frame resolution) `--axes {xy,xz,yz}` `--fps` `--out` (`.mp4`/`.gif`)
-`--panel`. Without the `viz` extra it degrades
+**`--view particles`**: a **3D point cloud**, the same renderer as `galaxy-view`'s 3D mode (MW blue /
+Andromeda orange), driven headless through the viewer's **offscreen GGUI** path — confirmed working
+on the headless CUDA box (Vulkan) as well as the Mac. Subsample with `--max-points`.
+
+Both encode to **MP4 or GIF** (by the `--out` extension); `--panel PATH` also saves the final frame
+as a standalone PNG.
+
+**Flags:** `--config` `--view {density,particles}` `--backend` `--n` (particle count, overriding the
+config) `--frame-cadence` (steps between frames) `--fps` `--out` (`.mp4`/`.gif`) `--panel`. Density
+only: `--bins` (resolution) `--axes {xy,xz,yz}`. 3D only: `--max-points` `--radius`. Without the
+`viz` extra it degrades
 gracefully — writes the PNG frames + prints the `ffmpeg` command to stitch them.
 
 **Where to render:** the movie path is headless, so the CUDA workstation renders frames fastest at

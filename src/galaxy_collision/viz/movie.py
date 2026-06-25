@@ -78,15 +78,7 @@ def write_movie(frames, times, path, *, extent, fps=12, cmap="inferno") -> Path:
     try:
         import imageio.v2 as imageio
 
-        # mp4 takes fps (+ macro_block_size pads to even dims for libx264); the GIF (Pillow) writer
-        # wants per-frame duration in ms, not fps.
-        if path.suffix.lower() == ".gif":
-            writer_kw: dict[str, Any] = {"duration": 1000.0 / fps}
-        elif path.suffix.lower() == ".mp4":
-            writer_kw = {"fps": fps, "macro_block_size": 16}
-        else:
-            writer_kw = {"fps": fps}
-        with imageio.get_writer(path, **writer_kw) as w:
+        with imageio.get_writer(path, **_writer_kwargs(path, fps)) as w:
             for frame in rgb:
                 w.append_data(frame)
         return path
@@ -103,26 +95,83 @@ def write_movie(frames, times, path, *, extent, fps=12, cmap="inferno") -> Path:
         return frame_dir
 
 
+def _writer_kwargs(path: Path, fps: int) -> dict[str, Any]:
+    """imageio writer kwargs by container: mp4 takes fps (+ macro_block_size pads to even dims for
+    libx264); the GIF (Pillow) writer wants per-frame duration in ms, not fps."""
+    if path.suffix.lower() == ".gif":
+        return {"duration": 1000.0 / fps}
+    if path.suffix.lower() == ".mp4":
+        return {"fps": fps, "macro_block_size": 16}
+    return {"fps": fps}
+
+
+def encode_image_files(image_paths, path, *, fps=12) -> Path:
+    """Encode existing image files (e.g. the viewer's GGUI offscreen 3D PNGs) into an MP4/GIF —
+    the encode half of the 3D (``--view particles``) movie path, where the frames are already
+    rendered RGB images rather than density arrays."""
+    import imageio.v2 as imageio
+
+    path = Path(path)
+    with imageio.get_writer(path, **_writer_kwargs(path, fps)) as w:
+        for p in image_paths:
+            w.append_data(imageio.imread(p))
+    return path
+
+
 _AXES = {"xy": (0, 1), "xz": (0, 2), "yz": (1, 2)}
 
 
+def _movie_particles_3d(config, args) -> int:
+    """3D movie: render the collision with the viewer's GGUI offscreen particle renderer (same
+    look as ``galaxy-view``'s 3D mode) and encode the frames. Reuses the proven offscreen path —
+    it renders correctly-oriented PNGs to a temp dir, which we then stitch into the movie."""
+    import shutil
+    import tempfile
+
+    from galaxy_collision.viz.viewer import run_viewer
+
+    cadence = args.frame_cadence or max(1, config.steps // 60)
+    n_frames = max(1, config.steps // cadence)
+    with tempfile.TemporaryDirectory() as td:
+        run_viewer(
+            config, offscreen=True, frames=n_frames, steps_per_frame=cadence,
+            out_dir=td, max_points=args.max_points, point_radius=args.radius,
+        )
+        pngs = sorted(Path(td).glob("frame_*.png"))
+        out = encode_image_files(pngs, args.out, fps=args.fps)
+        if args.panel is not None and pngs:
+            shutil.copyfile(pngs[-1], args.panel)
+    print(f"galaxy-movie ok: {len(pngs)} 3D frames (≤{args.max_points:,} pts) -> {out}")
+    if args.panel is not None:
+        print(f"  panel -> {args.panel}")
+    return 0
+
+
 def galaxy_movie_cli(argv: list[str] | None = None) -> int:
-    """CLI: ``galaxy-movie --config C [--backend B] [--n N] [--frame-cadence K] [--out FILE] …``."""
+    """CLI: ``galaxy-movie --config C [--view density|particles] [--backend B] [--n N] …``."""
     import argparse
 
     from galaxy_collision.config import load_config
     from galaxy_collision.sim import run_simulation
 
-    p = argparse.ArgumentParser(prog="galaxy-movie",
-                                description="Run a sim and render a density-projection movie.")
+    p = argparse.ArgumentParser(
+        prog="galaxy-movie",
+        description="Run a sim and render a collision movie (2D density or 3D particles).")
     p.add_argument("--config", type=Path, required=True, help="YAML run config.")
+    p.add_argument("--view", choices=("density", "particles"), default="density",
+                   help="density = 2D surface-density projection (default); "
+                        "particles = 3D point cloud, like galaxy-view's 3D mode.")
     p.add_argument("--backend", choices=("cpu", "cuda", "metal"), default=None)
     p.add_argument("--n", type=int, default=None,
                    help="particle count, overriding the config's n_particles (e.g. 100000000).")
     p.add_argument("--frame-cadence", type=int, default=None,
                    help="steps between frames (default: ~60 frames across the run).")
-    p.add_argument("--bins", type=int, default=512, help="image resolution per side.")
-    p.add_argument("--axes", choices=tuple(_AXES), default="xy", help="projection plane.")
+    p.add_argument("--bins", type=int, default=512, help="2D image resolution per side (density).")
+    p.add_argument("--axes", choices=tuple(_AXES), default="xy", help="projection plane (density).")
+    p.add_argument("--max-points", type=int, default=300_000,
+                   help="3D: cap on drawn (subsampled) points (particles view).")
+    p.add_argument("--radius", type=float, default=0.0,
+                   help="3D: point radius (0 = auto; particles view).")
     p.add_argument("--fps", type=int, default=12)
     p.add_argument("--out", type=Path, default=Path("collision.mp4"))
     p.add_argument("--panel", type=Path, default=None, help="also save the final frame as a PNG.")
@@ -137,8 +186,11 @@ def galaxy_movie_cli(argv: list[str] | None = None) -> int:
         config.n_particles = args.n
         config.particle_mass = None
     config.validate()
-    cadence = args.frame_cadence or max(1, config.steps // 60)
 
+    if args.view == "particles":
+        return _movie_particles_3d(config, args)
+
+    cadence = args.frame_cadence or max(1, config.steps // 60)
     result = run_simulation(
         config, write_snapshots=False,
         frame_cadence=cadence, frame_bins=args.bins, frame_axes=_AXES[args.axes],
