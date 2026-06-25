@@ -62,8 +62,10 @@
   3.86 steps/s, 6491 MiB peak). Suite green on CPU **and** CUDA. **Stage 6 (Apple/Metal) in progress
   — 6A ✅:** the f64 device reductions got a Kahan-fp32 path for fp64-less Metal (RV15 closed), the
   whole pipeline runs on `arch=metal`, test 6 is complete (CPU↔CUDA + CPU↔Metal legs sharing the
-  CPU anchor — no box has both GPUs), suite green on CPU + Metal (123). Next: 6B (deposit spike +
-  benchmark). Plan: `docs/stage6_plan.md` (D22–D24).
+  CPU anchor — no box has both GPUs), suite green on CPU + Metal (123). **6B ✅** — Metal benchmark
+  matrix 1M/10M/30M/100M (19.1/5.6/2.1/0.65 steps/s; 100M fits in 64 GB unified); the CIC deposit is
+  the Metal throughput ceiling at scale (write-scatter, not atomics/order — RV20, accepted per D23).
+  **Stage-6 exit gate is met** (parity + perf-vs-CUDA). Plan: `docs/stage6_plan.md` (D22–D24).
 - **Goal (scoped):** Rebuild as **one portable source** (Taichi-style kernels compiling to
   CPU + CUDA + Metal), research-grade physics, **10–100M particles**, **Apple GPU as a
   first-class performance target**, with a **pluggable Poisson solver** (open-boundary multigrid
@@ -622,7 +624,7 @@ this section is the tracked source of truth).
 | **3 — CPU reference (anchor)** | A *correct* sim: CIC + open-BC multigrid + KDK + softening + diagnostics + I/O | CPU | Plummer stays stable; two-body Kepler matches; energy drift < threshold | ✅ **Done** (2026-06-20) |
 | **4 — Validation & FFT oracle** | Zero-padded isolated FFT (✅ Stage 3) + validation hardening (4A) + paper-repro machinery (4B) + production 4v/2v runs & figures (4C) | CPU | Multigrid ≈ FFT within tolerance (✅); paper figures reproduced (✅ *qualitatively* — `docs/paper_reproduction.md`) | ✅ **Done** (2026-06-22) |
 | **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | ✅ **Done** (2026-06-25). RTX 3070 8 GB (`docs/gpu_setup.md`); checkpoints 5A→5C (`docs/stage5_plan.md`, D19–D21). **5A** device-resident force chain (RV6, RV10). **5B** profiler + benchmark (`docs/performance.md`): **6.5–12.5× throughput** via adaptive warm-start V-cycling + a TLS moment-reduction fix (solve ~13×; RV5); D19 closed by measurement. **5C** CuPy/cuFFT GPU oracle (D21, validates multigrid at 256³) + the **100M headline run** (D20: 800 steps/400 Myr, 3.86 steps/s, peak 6491 MiB/8192 — fits). Suite green on CPU **and** CUDA. |
-| **6 — Apple / Metal** | First-class Apple GPU, fp32 compute policy | Metal | Cross-backend parity (test 6); perf benchmark vs CUDA | 🔄 **In progress** (plan: `docs/stage6_plan.md`, D22–D24). **6A ✅** (2026-06-25) — Kahan-fp32 reduction path for fp64-less Metal (RV15 closed), whole pipeline runs on `arch=metal`, **test 6 complete** (CPU↔CUDA + CPU↔Metal parity legs, sharing the CPU anchor), suite green CPU+Metal (123). Next: **6B** (CIC deposit spike + benchmark), **6C** (100M run + CUDA-vs-Metal write-up). |
+| **6 — Apple / Metal** | First-class Apple GPU, fp32 compute policy | Metal | Cross-backend parity (test 6); perf benchmark vs CUDA | 🔄 **In progress** (plan: `docs/stage6_plan.md`, D22–D24). **Exit gate met** (test 6 ✅ in 6A; perf benchmark vs CUDA ✅ in 6B). **6A ✅** — Kahan-fp32 reductions for fp64-less Metal (RV15 closed), pipeline on `arch=metal`, test 6 complete (CPU↔CUDA + CPU↔Metal legs, sharing CPU anchor), suite green CPU+Metal (123). **6B ✅** (2026-06-25) — Metal benchmark matrix 1M/10M/30M/100M (19.1/5.6/2.1/0.65 steps/s; 100M fits, 21.5 GiB/64 GB unified); R2 deposit ceiling characterized (write-scatter, not atomics/order — RV20, D23 = accept). Next: **6C** (optional 100M collision headline + README sync → mark Stage 6 ✅). |
 | **7 — Visualization & output** | Realtime GGUI, batch→movie, paper figures, tracer particle | all | All four output modes working | ⬜ (incl. a **100M density-projection panel** — the 5C 100M run was a perf/scale demo validated by diagnostics, no image yet) |
 | **8 — Research campaigns** | 4v/2v studies, central-BH experiments, longer runs | all | Reproduce + extend 2020 results (future hooks: DM halo, TreePM) | ⬜ |
 
@@ -751,6 +753,12 @@ Items from **Stage 5 / 5C (2026-06-25)** — oracle + 100M run; doc-accuracy, no
 |---|---|---|---|---|
 | RV18 | Doc ↔ memory | The oracle docstring/§5.2 said the GPU pad is "~1 GB" — that's only the *persistent* Green's-FT; the per-solve working set is ~3 GB (pad + kernel-FT + spectrum) and CuPy's pool reserves ~5–6 GB once the cuFFT plan workspace is counted (measured). | Restate as persistent ~1 GB / working set ~3 GB / pooled ~5–6 GB; oracle runs alone, never co-resident with a 100M run. | ✅ **Done** (2026-06-25, 5C) — fixed in `fft_oracle.py` docstring, §5.2, D21. |
 | RV19 | Viz (Stage 7) | The 5C 100M run produced **no image** — snapshots are ~2.4 GB each, so none were written; it is validated by diagnostics (per D20: 100M = perf/scale demo, science figures were 4C at 10M). | A 100M density-projection panel would make a stronger headline — a natural Stage-7 viz item (flagged in the §7 Stage-7 row). | ⬜ Deferred to Stage 7 |
+
+Items from **Stage 6 / 6B (2026-06-25)** — Metal benchmark + deposit spike:
+
+| ID | Area | Finding | Suggested action | Status |
+|---|---|---|---|---|
+| RV20 | Perf (Metal deposit) | On Metal the CIC **deposit** is the throughput ceiling at scale — 69% of the step at 10M, 86% at 100M (~50× slower than CUDA's deposit; `docs/performance.md` 6B). The 6B spike pinned the cause to **global-memory write-scatter, geometry-bound** — *not* atomics (racy non-atomic `+=` is identical, 1.00×) and *not* particle order (cell-sort doesn't help, marginally slower). Evidence: gather (8 grid *reads*/particle) is ~19× cheaper than deposit (8 *writes*) at 100M, and a compact 3D gaussian deposits 16× faster than the thin-disk galaxy with the same kernel — thin disks → poor cache-line use for scattered writes in the row-major 256³ grid. | Per D23 the decision was **accept + document** (the backend is correct and runs 100M in unified memory; the two cheap fixes are ruled out by measurement). A real attempt would need **block-local threadgroup-memory privatization with spatial binning**, or a Morton/blocked `GridState` layout — large, uncertain payoff. Vulkan-compute + VkFFT remains the heavy-escalation fallback. Re-measure on Taichi/Metal upgrades. | ⬜ Deferred (accepted; revisit only if Metal deposit throughput becomes blocking) |
 
 ---
 

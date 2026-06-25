@@ -1,4 +1,7 @@
-# Performance — Stage 5 / 5B (CUDA, RTX 3070)
+# Performance — Stage 5/5B (CUDA, RTX 3070) · Stage 6/6B (Metal, M5 Pro)
+
+> The CUDA results below are Stage 5/5B; the **Metal results are the Stage 6/6B section at the
+> bottom** ([jump](#stage-6--6b--metal-apple-m5-pro)).
 
 Benchmark + per-stage profile of the PM force chain on the Stage-5 box (**NVIDIA RTX 3070,
 8 GB**, driver 595.71.05 / CUDA 13.2, Taichi 1.7.4, 256³ grid, multigrid solver). Numbers from
@@ -124,6 +127,69 @@ works, not the Green's-function build).
   the overlapped throughput ms/step — read them as *relative* cost.
 - "before 5B" 100M is an estimate (the pre-5B solver was never run at 100M); all "after" numbers
   are measured.
-- f64 reductions (moments, residual norm) are CUDA/CPU only; the Metal Kahan-fp32 path is Stage 6
-  (RV15).
+- f64 reductions (moments, residual norm) are CUDA/CPU only; on Metal they use the Kahan-fp32
+  path added in Stage 6/6A (RV15, `backend.supports_fp64`).
 - Reproduce: `galaxy-bench --n <N> --grid 256 --solver multigrid --backend cuda`.
+
+---
+
+# Stage 6 / 6B — Metal (Apple M5 Pro)
+
+Same instrument, same config (256³, multigrid, equilibrated + warm-started), on the Apple dev box
+(**M5 Pro, 64 GB unified memory**, Taichi 1.7.4 `arch=metal`). Reproduce with `--backend metal`.
+
+## Metal throughput + per-stage (ms/step)
+
+| N | steps/s | ms/step | deposit | solve | gather | grad | integrate | peak RSS |
+|---|---|---|---|---|---|---|---|---|
+| 1M | **19.1** | 52.3 | 9.3 (17%) | 40.6 (76%) | 0.6 | 2.2 | 0.8 | 361 MiB |
+| 10M | **5.64** | 177 | 117 (69%) | 40.7 (24%) | 4.2 | 2.2 | 5.3 | 2.5 GiB |
+| 30M | **2.13** | 469 | 384 (84%) | 41.1 (9%) | 12.6 | 2.2 | 18.3 | 7.3 GiB |
+| 100M | **0.65** | 1545 | 1272 (86%) | 60.4 (4%) | 66.9 | 1.7 | 75.2 | 21.5 GiB |
+
+**100M fits comfortably** — 21.5 GiB peak process RSS against 64 GB, ~42 GB free. Unified memory
+removes the discrete-VRAM ceiling that was *the* constraint at 100M on the 8 GB 3070. (Peak RSS is
+the whole process — device fields + the host-side IC numpy arrays, ~5.6 GB of f64 at 100M, kept
+resident — so it overstates the device footprint; the analytical field estimate is ~5 GB.)
+
+## CUDA vs Metal
+
+| N | CUDA 3070 (steps/s) | Metal M5 Pro (steps/s) | Metal/CUDA | CUDA deposit | Metal deposit |
+|---|---|---|---|---|---|
+| 1M | 33.4 | 19.1 | 0.57× | 0.50 ms | 9.3 ms |
+| 10M | 24.8 | 5.64 | 0.23× | 2.54 ms | 117 ms |
+| 30M | 15.8 | 2.13 | 0.13× | 6.94 ms | 384 ms |
+| 100M | 6.95 | 0.65 | 0.094× | 22.8 ms | 1272 ms |
+
+Two different stories by regime:
+
+- **Solve (grid-bound):** Metal ~40–60 ms vs CUDA ~27.6 ms — same order (~1.5–2×). At 1M, where
+  the solve dominates, Metal is a respectable **0.57× CUDA**.
+- **Deposit (the divergence):** Metal's CIC scatter is **~50× slower than CUDA's** and grows to
+  **86% of the step at 100M** (on CUDA it never exceeds ~16%). This is the R2 risk materializing,
+  and it sets the Metal throughput ceiling at scale.
+
+## R2 — why Metal deposit is slow (the 6B spike, D23)
+
+The deposit was characterized across variants; the cause is **not** what the standard playbook
+assumes, so the standard fixes don't apply:
+
+- **Not atomic contention.** Replacing `ti.atomic_add` with a racy non-atomic `+=` gives an
+  *identical* time (1.00×), even on the real galaxy IC with 23,669 particles in the hottest cell.
+  Metal float-atomics are not the cost; privatizing them would buy nothing.
+- **Not particle memory order.** Cell-sorting the particles (the CUDA-rejected variant) does **not**
+  help on Metal either (1.0×, marginally slower) — and a host argsort costs ~250× a deposit.
+- **It is global-memory write-scatter, geometry-bound.** Same 8-node CIC stencil, but **gather
+  (8 grid *reads*/particle) is ~19× cheaper than deposit (8 *writes*/particle)** at 100M
+  (0.67 vs 12.7 ns/particle). And with the *same kernel*, a compact 3D gaussian deposits **16×
+  faster** than the real two-galaxy IC despite near-identical occupied-cell counts — the thin disks
+  map to scattered writes with poor cache-line utilization in the row-major 256³ grid.
+
+**Decision (D23): accept and document.** The Metal backend is correct and runs the full 100M
+collision within unified memory; the deposit cost is a hardware/layout interaction, not a fixable
+kernel inefficiency, and the two cheap mitigations are empirically ruled out. The one remaining
+idea — **block-local (threadgroup-memory) privatization with spatial binning**, or a Morton/blocked
+grid layout so scattered writes hit fewer cache lines — is a large, uncertain change disproportionate
+to its payoff here; it is logged as **RV20** (deferred) and Vulkan-compute + VkFFT remains the
+heavy-escalation fallback (not triggered). The `galaxy-bench` harness is here to re-measure if a
+future workload or a Taichi/Metal upgrade changes the picture.

@@ -102,8 +102,21 @@ re-pass — before any perf claim.*
 **Exit 6A:** full suite green on **CPU + CUDA + Metal**; no fp64 in any kernel that runs on Metal;
 RV15 closed; the 3-way parity test added and passing.
 
-### 6B — Performance: deposition spike + profile + benchmark ⬜
+### 6B — Performance: deposition spike + profile + benchmark ✅ **Done (2026-06-25)**
 *Earn "first-class GPU," not just "it runs."*
+
+> **Delivered (`docs/performance.md` Stage-6 section).** Metal benchmark matrix at 1M/10M/30M/100M
+> on the M5 Pro: **19.1 / 5.6 / 2.1 / 0.65 steps/s**. **100M fits** (21.5 GiB peak RSS / 64 GB —
+> unified memory removes the 8 GB-card ceiling; `bench` gained a backend-aware memory probe:
+> nvidia-smi on CUDA, peak process RSS on Metal/CPU). **R2 confirmed and characterized (D23):**
+> deposit is the throughput ceiling at scale (69% @10M → 86% @100M, ~50× CUDA's deposit). The spike
+> *ruled out* the two cheap fixes — it is **not** atomic contention (racy non-atomic `+=` is
+> identical, 1.00×, even with 23.7k particles/hot-cell) and **not** particle order (cell-sort
+> doesn't help). Root cause: **global-memory write-scatter, geometry-bound** — gather-reads are ~19×
+> cheaper than deposit-writes for the same stencil, and a compact gaussian deposits 16× faster than
+> the thin-disk galaxy. **Decision: accept + document** (owner, 2026-06-25); logged **RV20** for a
+> possible future block-local-privatization / grid-relayout attempt; Vulkan fallback not triggered.
+> The solve (grid-bound) stays competitive (~40–60 ms vs CUDA ~28 ms), so at 1M Metal is 0.57× CUDA.
 
 1. **Phase-0 CIC-deposit spike (D23, R2).** Micro-benchmark the deposit on Metal across the 5B
    variants (resident `atomic_add`; per-block privatization; sort-by-cell) at 1M/10M/30M. If Metal

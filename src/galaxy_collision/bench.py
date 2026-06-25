@@ -42,6 +42,27 @@ def _gpu_mem_used_mib() -> float | None:
         return None
 
 
+def _peak_rss_mib() -> float:
+    """Peak resident set size of this process (MiB). For a *unified-memory* GPU (Apple Metal)
+    the device fields live in system RAM, so process RSS is the relevant memory-pressure number
+    (there is no separate VRAM pool). ``ru_maxrss`` is bytes on macOS, KiB on Linux."""
+    import resource
+    import sys
+
+    r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return r / (1024 * 1024) if sys.platform == "darwin" else r / 1024
+
+
+def _memory_probe(backend: str) -> tuple[float | None, str | None]:
+    """(value_MiB, label) for the run's memory footprint, by backend.
+
+    CUDA has a discrete VRAM pool → query nvidia-smi. Metal/CPU are unified-memory → report the
+    process peak RSS (includes host overhead + the IC build, so it's an upper bound)."""
+    if backend == "cuda":
+        return _gpu_mem_used_mib(), "GPU mem used"
+    return _peak_rss_mib(), "peak process RSS"
+
+
 def _timed(ti, fn: Callable[[], None]) -> float:
     """Run ``fn`` and return its wall time, bracketed by ``ti.sync()`` for true device time."""
     ti.sync()
@@ -138,7 +159,7 @@ def run_benchmark(
     for _ in range(warmup):
         step()
     ti.sync()
-    mem_mib = _gpu_mem_used_mib() if config.backend == "cuda" else None
+    mem_mib, mem_label = _memory_probe(config.backend)
 
     # Throughput: one sync at the end so launches overlap like a real run. Record the adaptive
     # solver's per-step cycle count (if the solver exposes it) to explain the solve cost.
@@ -164,6 +185,9 @@ def run_benchmark(
         per_stage["integrate"] += _timed(ti, do_kick)
     per_stage_ms = {s: per_stage[s] / measure * 1e3 for s in _STAGES}
 
+    from galaxy_collision.data import estimate_memory
+
+    est_gb = estimate_memory(n, gs).total_gb
     return {
         "device": backend["device"],
         "backend_resolved": backend["resolved"],
@@ -173,7 +197,9 @@ def run_benchmark(
         "steps_per_sec": measure / wall,
         "ms_per_step": wall / measure * 1e3,
         "per_stage_ms": per_stage_ms,
-        "gpu_mem_used_mib": mem_mib,
+        "mem_used_mib": mem_mib,
+        "mem_label": mem_label,
+        "est_total_gb": est_gb,
         "mean_solver_cycles": mean_cycles,
     }
 
@@ -185,8 +211,9 @@ def _format_report(r: dict[str, Any]) -> str:
         f"grid        : {r['grid_size']}^3   solver={r['solver']}",
         f"throughput  : {r['steps_per_sec']:.2f} steps/s   ({r['ms_per_step']:.1f} ms/step)",
     ]
-    if r["gpu_mem_used_mib"] is not None:
-        lines.append(f"GPU mem     : {r['gpu_mem_used_mib']:.0f} MiB used")
+    lines.append(f"est. fields : {r['est_total_gb']:.2f} GB (analytical: particles + grid)")
+    if r["mem_used_mib"] is not None:
+        lines.append(f"{r['mem_label']:<12s}: {r['mem_used_mib']:.0f} MiB")
     if r["mean_solver_cycles"] is not None:
         lines.append(f"solver      : {r['mean_solver_cycles']:.1f} V-cycles/step (mean, adaptive)")
     lines.append("per-stage (ms/step, individually synced):")
