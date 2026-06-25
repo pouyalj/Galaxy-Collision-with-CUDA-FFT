@@ -516,7 +516,9 @@ portable (the one thing a plain FFT is not under Taichi) and physically correct 
 - **Headless web view:** the same live 2D density projection streamed as **MJPEG over HTTP**
   (`viz/serve.py`, `galaxy-serve`) so a **display-less** run (e.g. the CUDA box) is watchable in a
   browser via a link (SSH-tunnel the port). Pure compute + on-device colormap — no GGUI/Vulkan
-  context needed. *(✅ Stage-7 follow-on; browser pause/speed/plane controls.)*
+  context needed. Takes `--n` to override the config's particle count (e.g. `--n 100000000` to
+  stream a 100M run off a 10M paper config), plus `--backend`/`--bins`/`--steps-per-frame`/`--fps`.
+  *(✅ Stage-7 follow-on; browser pause/speed/plane controls.)*
 - **Batch → movie:** headless run projects density frames on the device → MP4/GIF via
   `imageio-ffmpeg`. **Replaces DISLIN entirely.** *(✅ 7A `viz/movie.py`; ~1 MB/frame, no snapshot
   bloat.)*

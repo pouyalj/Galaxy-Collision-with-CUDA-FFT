@@ -205,7 +205,7 @@ def serve_viewer(
 
 
 def serve_cli(argv: list[str] | None = None) -> int:
-    """CLI: ``galaxy-serve --config C [--backend B] [--host H] [--port P] [--bins N]
+    """CLI: ``galaxy-serve --config C [--backend B] [--n N] [--host H] [--port P] [--bins N]
     [--steps-per-frame K] [--fps F]``."""
     import argparse
 
@@ -217,6 +217,8 @@ def serve_cli(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--config", type=__import__("pathlib").Path, required=True)
     p.add_argument("--backend", default=None, help="cpu | cuda | metal (overrides the config).")
+    p.add_argument("--n", type=int, default=None,
+                   help="particle count, overriding the config's n_particles (e.g. 100000000).")
     p.add_argument("--host", default="127.0.0.1",
                    help="bind address (0.0.0.0 to expose on the network; default localhost).")
     p.add_argument("--port", type=int, default=8080)
@@ -229,7 +231,12 @@ def serve_cli(argv: list[str] | None = None) -> int:
     config = load_config(args.config)
     if args.backend is not None:
         config.backend = args.backend
-        config.validate()
+    if args.n is not None:
+        # Override the config's particle count; clear particle_mass so the two don't both
+        # resolve a count (SimConfig forbids setting both).
+        config.n_particles = args.n
+        config.particle_mass = None
+    config.validate()
 
     serve_viewer(config, host=args.host, port=args.port, bins=args.bins,
                  steps_per_frame=args.steps_per_frame, fps_cap=args.fps)

@@ -156,12 +156,13 @@ and a few can be overridden on the command line with **flags**. Both are spelled
   **M** toggles 2D/3D, **P** cycles the projection plane, **[ ]** change speed, **ESC/Q** quits.
 
 **`galaxy-serve`** streams a live run to a browser over HTTP — for watching a **headless** box (no
-display needed; needs the `viz` extra). Flags: **`--config`**, **`--backend`**, **`--host`** (default
-`127.0.0.1`; `0.0.0.0` exposes it on the network — no auth, so prefer an SSH tunnel), **`--port`**
-(8080), **`--bins`** (projection resolution), **`--steps-per-frame`**, **`--fps`** (frame cap). Then:
+display needed; needs the `viz` extra). Flags: **`--config`**, **`--backend`**, **`--n`** (particle
+count, overriding the config — e.g. `--n 100000000`), **`--host`** (default `127.0.0.1`; `0.0.0.0`
+exposes it on the network — no auth, so prefer an SSH tunnel), **`--port`** (8080), **`--bins`**
+(projection resolution), **`--steps-per-frame`**, **`--fps`** (frame cap). Then:
 
 ```bash
-galaxy-serve --config configs/paper_4v.yaml --backend cuda     # on the headless box
+galaxy-serve --config configs/paper_4v.yaml --backend cuda --n 100000000   # 100M on the headless box
 ssh -N -L 8080:localhost:8080 user@box                         # from your laptop → http://localhost:8080
 ```
 

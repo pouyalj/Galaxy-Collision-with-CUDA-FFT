@@ -63,6 +63,7 @@ watch the collision in a **browser** — no display, no X server, no Vulkan cont
 ```bash
 # on the headless box:
 galaxy-serve --config configs/paper_4v.yaml --backend cuda            # serves 127.0.0.1:8080
+galaxy-serve --config configs/paper_4v.yaml --backend cuda --n 100000000   # stream a 100M run
 # from your laptop, tunnel the port and open the link in any browser:
 ssh -N -L 8080:localhost:8080 user@cuda-box                           # then: http://localhost:8080
 ```
@@ -71,8 +72,8 @@ The page shows a self-updating image (MJPEG `multipart/x-mixed-replace`) plus bu
 **pause/resume**, change **speed** (steps/frame), and cycle the **projection plane** (xy/xz/yz). The
 sim runs at full speed on the box; the browser just receives frames.
 
-**Flags:** `--config` `--backend` `--host` (default `127.0.0.1`) `--port` (8080) `--bins` (projection
-resolution) `--steps-per-frame` `--fps` (frame cap).
+**Flags:** `--config` `--backend` `--n` (particle count, overriding the config) `--host` (default
+`127.0.0.1`) `--port` (8080) `--bins` (projection resolution) `--steps-per-frame` `--fps` (frame cap).
 
 **Access & safety:** the **SSH tunnel above is the recommended way** to get a link — it's encrypted
 and needs no open ports. `--host 0.0.0.0` instead binds the stream to the network directly (anyone
