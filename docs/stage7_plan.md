@@ -70,11 +70,14 @@ It also retires the snapshot-bloat problem: movies never write the 2.4 GB snapsh
 > render-on-vulkan split), and the offscreen path is CI-smoke-testable.
 >
 > **Delivered.** (1) `viz/viewer.py` + `galaxy-view` CLI: an in-process `ti.ui.Window` driving the
-> live force chain (deposit→solve→grad→gather→KDK), runnable on cpu/cuda/**metal**. (2) **3D mode** —
-> `scene.particles` over a fixed ceil-capped subsample (`--max-points`), colored by galaxy id
-> (MW blue / Andromeda orange), orbit camera. (3) **2D mode** — the §1 device projection
-> (`viz.project`, the kernel the movie reuses) → LogNorm colormap → `canvas.set_image`; **M** toggles
-> 3D↔2D, **P** cycles the plane (xy/xz/yz). (4) **Controls** — SPACE pause · N single-step · R restart
+> live force chain via the canonical `integrator.kdk_step` (no inline KDK re-implementation),
+> runnable on cpu/cuda/**metal**. (2) **3D mode** — `scene.particles` over a fixed ceil-capped
+> subsample (`--max-points`), colored by galaxy id (MW blue / Andromeda orange), orbit camera.
+> (3) **2D mode** — the §1 device projection (`viz.project.scatter_density`, the kernel the movie
+> reuses) → **fully on-device** LogNorm colormap (a device max-reduction + a 256-entry LUT kernel;
+> only the scalar peak crosses to the host, never the image — delivering §1's "no round-trip" claim)
+> → `canvas.set_image`; **M** toggles 3D↔2D, **P** cycles the plane (xy/xz/yz). (4) **Controls** —
+> SPACE pause · N single-step · R restart
 > to t=0 (reloads the stashed IC, no realloc) · `[`/`]` speed · `-`/`=` point size · ESC/Q quit · an
 > on-screen text overlay (step/time/mode/speed). (5) **Offscreen mode** (`--offscreen --frames`) for a
 > headless quick-check / CI. (6) `tests/test_viewer.py` — offscreen render smoke test (skips where

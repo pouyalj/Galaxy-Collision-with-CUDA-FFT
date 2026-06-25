@@ -50,15 +50,14 @@ def _project(
 _AXIS = {0: "pos_x", 1: "pos_y", 2: "pos_z"}
 
 
-def project_density(parts, img, extent, axes=(0, 1)) -> np.ndarray:
-    """Fill ``img`` (a preallocated square ``(bins, bins)`` Taichi f32 field) with the device
-    projection of ``parts`` and return the **surface density** as a NumPy array.
+def scatter_density(parts, img, extent, axes=(0, 1)) -> tuple[float, float]:
+    """Device-only: scatter ``parts``' mass into ``img`` (``(bins, bins)`` mass-per-bin) and
+    return the in-plane bin widths ``(binw_a, binw_b)``. **No host copy** — ``img`` stays on the
+    device for a GPU consumer (the viewer's 2D colormap, Stage 7B). ``project_density`` wraps this
+    and adds the host transfer + surface-density conversion.
 
-    ``extent = (a_lo, a_hi, b_lo, b_hi)`` are the in-plane ranges (kpc) for axes ``a, b`` = ``axes``
-    (e.g. ``(0, 1)`` = the x–y plane, projecting out z). The returned array is oriented for
-    ``imshow(origin="lower", extent=extent)`` — identical to ``paper_repro._hist2d``. ``img`` is
-    caller-owned so it is allocated once (Taichi forbids new fields after the first kernel launch).
-    """
+    Note the field is indexed ``img[ia, ib]`` = ``[a, b]`` natively (no transpose), which is exactly
+    the ``[x, y]`` layout GGUI ``canvas.set_image`` expects — so a device consumer needs no flip."""
     a, b = axes
     bins = img.shape[0]
     lo_a, hi_a, lo_b, hi_b = (float(v) for v in extent)
@@ -68,7 +67,20 @@ def project_density(parts, img, extent, axes=(0, 1)) -> np.ndarray:
         getattr(parts, _AXIS[a]), getattr(parts, _AXIS[b]), parts.mass, parts.n,
         lo_a, lo_b, binw_a, binw_b, bins, img,
     )
+    return binw_a, binw_b
+
+
+def project_density(parts, img, extent, axes=(0, 1)) -> np.ndarray:
+    """Fill ``img`` (a preallocated square ``(bins, bins)`` Taichi f32 field) with the device
+    projection of ``parts`` and return the **surface density** as a NumPy array.
+
+    ``extent = (a_lo, a_hi, b_lo, b_hi)`` are the in-plane ranges (kpc) for axes ``a, b`` = ``axes``
+    (e.g. ``(0, 1)`` = the x–y plane, projecting out z). The returned array is oriented for
+    ``imshow(origin="lower", extent=extent)`` — identical to ``paper_repro._hist2d``. ``img`` is
+    caller-owned so it is allocated once (Taichi forbids new fields after the first kernel launch).
+    """
+    binw_a, binw_b = scatter_density(parts, img, extent, axes)
     return img.to_numpy().T / (binw_a * binw_b)  # mass/bin → surface density, imshow-oriented
 
 
-__all__ = ["project_density"]
+__all__ = ["project_density", "scatter_density"]

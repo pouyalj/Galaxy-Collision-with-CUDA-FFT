@@ -65,7 +65,8 @@
   anchor). **6B** Metal benchmark matrix 1M/10M/30M/100M (19.1/5.6/2.1/0.65 steps/s; 100M fits in
   64 GB unified); the CIC deposit is the Metal throughput ceiling at scale (write-scatter, not
   atomics/order — RV20, accepted per D23). **6C** bounded 100M end-to-end collision on Metal (stable,
-  sane diagnostics). Suite green on CPU, CUDA **and** Metal (123). **Next: Stage 7 (viz/output).**
+  sane diagnostics). **Stage 7 (viz/output) in progress — 7A (batch→movie) + 7B (realtime GGUI
+  viewer, runs on Metal) ✅ done; 7C (write-up) remains** (see the §7 row / `docs/stage7_plan.md`).
   Plan: `docs/stage6_plan.md` (D22–D24).
 - **Goal (scoped):** Rebuild as **one portable source** (Taichi-style kernels compiling to
   CPU + CUDA + Metal), research-grade physics, **10–100M particles**, **Apple GPU as a
@@ -593,7 +594,8 @@ this section is the tracked source of truth).
 > 3-way **test 6** parity (CPU↔CUDA + CPU↔Metal legs sharing the CPU anchor), a Metal benchmark
 > matrix (the CIC **deposit** is the Metal throughput ceiling at scale — write-scatter-bound, *not*
 > atomics/order, RV20/D23 = accept), and a bounded 100M end-to-end collision on the M5 Pro. Suite
-> green on CPU, CUDA **and** Metal (123). **Next: Stage 7 (viz/output).**
+> green on CPU, CUDA **and** Metal (123). **Stage 7 (viz/output) in progress — 7A (movie) + 7B
+> (GGUI viewer) ✅; 7C write-up remains** (`docs/stage7_plan.md`; §7 row synced at 7C).
 > The FFT oracle was pulled forward into Stage 3 (so multigrid is validated against it now).
 > **Stage 4 complete** (scope = D18) —
 > **4A ✅, 4B ✅, 4C ✅** — the 4v & 2v collisions were run at 256³ / 10M particles and the paper's

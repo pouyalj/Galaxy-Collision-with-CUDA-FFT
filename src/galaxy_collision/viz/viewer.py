@@ -24,10 +24,17 @@ This module deliberately omits ``from __future__ import annotations`` — PEP 56
 the ``ti.template()`` kernel annotations (see ``deposit.py``).
 """
 
+import math
 from pathlib import Path
 
 import numpy as np
 import taichi as ti
+
+# 2D-mode display: fixed log dynamic range (decades below the per-frame peak) for the density
+# colormap. A fixed window is stable frame-to-frame (a per-frame min would flicker) and standard
+# for density displays; the movie/paper figures use their own LogNorm and are unaffected.
+_LOG_DECADES = 4.0
+_LUT_N = 256  # colormap lookup-table resolution
 
 # Per-galaxy point colors (gid 0 = Milky Way, 1 = Andromeda); anything else → grey.
 _COLOR_MW = (0.55, 0.72, 1.0)   # cool white-blue
@@ -57,6 +64,42 @@ def _pack_positions(
         ])
 
 
+@ti.kernel
+def _max_field(img: ti.template(), out: ti.template()):
+    """Device max-reduction of ``img`` into the 0-D field ``out`` (f32, Metal-safe; 0-D → TLS)."""
+    out[None] = 0.0
+    for i, j in img:
+        ti.atomic_max(out[None], img[i, j])
+
+
+@ti.kernel
+def _colormap_log(
+    img: ti.template(), lut: ti.template(), log_vmin: ti.f32, inv_logspan: ti.f32,
+    out: ti.template(),
+):
+    """LogNorm a density image through a 256-entry colormap LUT — **fully on device**.
+
+    ``out[i,j] = lut[ round(clamp01((ln img − log_vmin)·inv_logspan) · 255) ]``. Indexed ``[i,j]`` =
+    ``[x,y]`` to match both ``project._project`` and GGUI ``set_image`` (no transpose). Only the
+    scalar peak crosses to the host (to derive ``log_vmin``); the image never does."""
+    for i, j in img:
+        v = img[i, j]
+        t = 0.0
+        if v > 0.0:
+            t = (ti.log(v) - log_vmin) * inv_logspan
+        t = ti.min(1.0, ti.max(0.0, t))
+        idx = ti.cast(t * (_LUT_N - 1) + 0.5, ti.i32)
+        idx = ti.min(_LUT_N - 1, ti.max(0, idx))
+        out[i, j] = ti.Vector([lut[idx, 0], lut[idx, 1], lut[idx, 2]])
+
+
+def _inferno_lut() -> np.ndarray:
+    """The 256×3 'inferno' colormap as an f32 LUT (one-time host build, uploaded to the device)."""
+    import matplotlib
+
+    return matplotlib.colormaps["inferno"](np.linspace(0.0, 1.0, _LUT_N))[:, :3].astype(np.float32)
+
+
 def _setup_chain(config):
     """Build the device-resident force chain for ``config`` (mirrors ``bench.run_benchmark``)."""
     from galaxy_collision import ic as ic_mod
@@ -81,23 +124,6 @@ def _setup_chain(config):
     return icr, parts, grid, acc, solver, n, gs, DX
 
 
-def _density_rgb(dens: np.ndarray, cmap_name: str = "inferno") -> np.ndarray:
-    """LogNorm + colormap a surface-density image to an RGB array oriented for ``set_image``.
-
-    ``project_density`` returns an ``imshow(origin='lower')``-oriented array (rows = y); GGUI's
-    ``set_image`` indexes ``[x, y]`` from the bottom-left, so we transpose rows↔cols. Empty/zero
-    bins map to the colormap's low end."""
-    import matplotlib
-    from matplotlib.colors import LogNorm
-
-    pos = dens[dens > 0]
-    if pos.size == 0:
-        return np.zeros((dens.shape[1], dens.shape[0], 3), dtype=np.float32)
-    norm = LogNorm(vmin=pos.min(), vmax=max(dens.max(), pos.min() * 10.0))
-    rgb = matplotlib.colormaps[cmap_name](norm(np.clip(dens, pos.min(), None)))[..., :3]
-    return np.ascontiguousarray(rgb.transpose(1, 0, 2), dtype=np.float32)  # (y,x,3)→(x,y,3)
-
-
 def run_viewer(
     config,
     *,
@@ -118,14 +144,13 @@ def run_viewer(
     ``out_dir`` with no window (headless, 3D mode). Returns a small summary dict.
     """
     from galaxy_collision.deposit import deposit_density, gather_acceleration, potential_to_accel
-    from galaxy_collision.integrator import drift, kick
+    from galaxy_collision.integrator import kdk_step
     from galaxy_collision.sim import init_backend
-    from galaxy_collision.viz.project import project_density
+    from galaxy_collision.viz.project import scatter_density
 
     backend = init_backend(config)
     icr, parts, grid, acc, solver, n, gs, dx = _setup_chain(config)
     acc_x, acc_y, acc_z = acc
-    half = 0.5 * config.dt
     # Stash the t=0 state (host arrays) so 'R' can restart without reallocating device fields.
     pos0, vel0 = icr.pos.copy(), icr.vel.copy()
 
@@ -143,9 +168,14 @@ def run_viewer(
     inv_box = 1.0 / float(gs)
     radius = point_radius if point_radius > 0.0 else max(0.0012, 0.06 / m**0.5)
 
-    # 2D mode fields: the device projection target + the colormapped RGB image for set_image.
+    # 2D mode fields (all device-resident): the projection target, a colormap LUT, a 0-D peak
+    # buffer, and the RGB image fed to set_image. Only the scalar peak crosses to the host.
     proj_img = ti.field(ti.f32, shape=(bins, bins))
     rgb_img = ti.Vector.field(3, ti.f32, shape=(bins, bins))
+    lut = ti.field(ti.f32, shape=(_LUT_N, 3))
+    lut.from_numpy(_inferno_lut())
+    maxbuf = ti.field(ti.f32, shape=())
+    inv_logspan = 1.0 / (_LOG_DECADES * math.log(10.0))
     extent_full = (0.0, float(gs), 0.0, float(gs))
 
     def reload_ic():
@@ -155,22 +185,22 @@ def run_viewer(
 
     warm = {"on": False}
 
-    def prime():
+    def accel_fn():
+        """Recompute a(x) into ``acc_*`` from current positions — the one force eval ``kdk_step``
+        calls each step (and ``prime`` calls once up front). Warm-starts the solve after step 1."""
         deposit_density(parts, grid.rho, dx)
-        solver.solve(grid.rho, grid.phi, warm_start=False)
+        solver.solve(grid.rho, grid.phi, warm_start=warm["on"])
         warm["on"] = True
         potential_to_accel(grid.phi, grid.ax, grid.ay, grid.az, dx)
         gather_acceleration(parts, grid.ax, grid.ay, grid.az, acc_x, acc_y, acc_z, dx)
 
+    def prime():
+        warm["on"] = False  # first solve is cold; subsequent ones warm-start
+        accel_fn()
+
     def step_once():
-        kick(parts.vel_x, parts.vel_y, parts.vel_z, acc_x, acc_y, acc_z, n, half)
-        drift(parts.pos_x, parts.pos_y, parts.pos_z,
-              parts.vel_x, parts.vel_y, parts.vel_z, n, config.dt)
-        deposit_density(parts, grid.rho, dx)
-        solver.solve(grid.rho, grid.phi, warm_start=warm["on"])
-        potential_to_accel(grid.phi, grid.ax, grid.ay, grid.az, dx)
-        gather_acceleration(parts, grid.ax, grid.ay, grid.az, acc_x, acc_y, acc_z, dx)
-        kick(parts.vel_x, parts.vel_y, parts.vel_z, acc_x, acc_y, acc_z, n, half)
+        # Reuse the canonical KDK ordering (integrator.kdk_step) — no inline re-implementation.
+        kdk_step(parts, acc_x, acc_y, acc_z, accel_fn, config.dt)
 
     prime()
 
@@ -189,8 +219,7 @@ def run_viewer(
 
     def restart():
         reload_ic()
-        warm["on"] = False
-        prime()
+        prime()  # re-primes acc_* (and resets the warm-start) for the reloaded positions
         st["step"] = 0
 
     def draw_3d():
@@ -202,9 +231,15 @@ def run_viewer(
         canvas.scene(scene)
 
     def draw_2d():
-        axes = _PROJ_PLANES[st["plane"]]
-        dens = project_density(parts, proj_img, extent_full, axes=axes)
-        rgb_img.from_numpy(_density_rgb(dens))
+        # Fully device-resident: scatter → device max → device LogNorm+colormap → set_image.
+        # Only the scalar peak crosses to the host (to set the LogNorm window); the image does not.
+        scatter_density(parts, proj_img, extent_full, axes=_PROJ_PLANES[st["plane"]])
+        _max_field(proj_img, maxbuf)
+        vmax = float(maxbuf[None])
+        if vmax <= 0.0:
+            vmax = 1.0
+        log_vmin = math.log(vmax) - _LOG_DECADES * math.log(10.0)
+        _colormap_log(proj_img, lut, log_vmin, inv_logspan, rgb_img)
         canvas.set_image(rgb_img)
 
     def advance():
