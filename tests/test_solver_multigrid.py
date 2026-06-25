@@ -174,6 +174,41 @@ def test_multigrid_point_mass_far_field_monopole():
         prev = rel
 
 
+@pytest.mark.fixed_arch  # explicitly CUDA + CuPy; not subject to GALAXY_TEST_ARCH
+def test_multigrid_matches_gpu_oracle_at_production_grid():
+    """D21 (5C): validate multigrid against the **GPU (CuPy/cuFFT) oracle at the production 256³
+    grid** — the size the CPU oracle is too slow/memory-heavy for in CI. Skips without CuPy.
+
+    Both solvers run on the 256³ node grid; the oracle convolves on a 512³ pad via cuFFT. We
+    assert a *loose* sanity agreement (per RV9 the tight checks are convergence + the analytic
+    anchor); the point here is that the GPU oracle exercises the full-resolution comparison.
+    """
+    pytest.importorskip("taichi", reason="Taichi not installed")
+    from galaxy_collision.solver.fft_oracle import _cupy_usable
+
+    if not _cupy_usable():
+        pytest.skip("CuPy/CUDA not available")
+    import taichi as ti
+
+    from galaxy_collision.solver.fft_oracle import FFTPoissonSolver
+    from galaxy_collision.solver.multigrid import MultigridPoissonSolver
+
+    ti.init(arch=ti.cuda)
+    n, dx = 256, 1.0
+    rho = _gaussian_rho(ti, n, dx, sigma=8.0, total_mass=2.32e11)
+    phi_mg = ti.field(ti.f32, shape=(n, n, n))
+    phi_or = ti.field(ti.f32, shape=(n, n, n))
+
+    oracle = FFTPoissonSolver(n, dx=dx, grav_constant=units.G)
+    assert oracle.on_gpu  # this test's whole point is the GPU FFT path
+    oracle.solve(rho, phi_or)
+    MultigridPoissonSolver(n, dx=dx, grav_constant=units.G, n_cycles=40, tol=0.0).solve(rho, phi_mg)
+
+    a, b = phi_mg.to_numpy(), phi_or.to_numpy()
+    rel = float(np.abs(a - b).max() / np.abs(b).max())
+    assert rel < 0.05, f"multigrid vs GPU oracle peak disagreement {rel:.3f} at 256³"
+
+
 def test_multigrid_matches_fft_oracle():
     pytest.importorskip("taichi", reason="Taichi not installed")
     import taichi as ti

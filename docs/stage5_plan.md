@@ -102,7 +102,14 @@ Stage 5 also closes deferred review items **RV5, RV6, RV10** and partially advan
 **Exit 5B:** benchmark matrix produced; deposit is no longer the dominant stage (or documented why);
 solver tuning measured against the oracle.
 
-### 5C — GPU oracle + 100M headline run + write-up
+### 5C — GPU oracle + 100M headline run + write-up ✅ **Done (2026-06-25)**
+
+> **Delivered.** (1) CuPy/cuFFT GPU path in `solver/fft_oracle.py` (auto-detected; `[ctk]` extra
+> for headers) — 512³ transform ~19× faster, validates multigrid at the **256³** production grid
+> (`test_multigrid_matches_gpu_oracle_at_production_grid`); NumPy fallback intact for CI. (2)
+> **100M headline collision** (`two_galaxy_4v`, 800 steps/400 Myr): **3.86 steps/s, 6491 MiB/8192
+> peak** — fits; half-mass 45.7→11.5→62.8 kpc (sensible infall→pericenter→tidal). (3) Write-up in
+> `docs/performance.md`; AGENT.md §1/§7/§11 + README synced; **Stage 5 ✅**. Suite green CPU+CUDA.
 
 1. **CuPy cuFFT oracle (D21).** Add an optional GPU FFT path to `solver/fft_oracle.py` (CuPy when
    `cupy-cuda12x` is present, NumPy/pocketfft otherwise). Use it to validate multigrid at a larger N

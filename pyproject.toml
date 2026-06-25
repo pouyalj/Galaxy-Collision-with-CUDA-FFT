@@ -24,8 +24,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# CUDA-only zero-padded FFT validation oracle (Stage 4); never required on the Apple/production path.
-cuda = ["cupy-cuda12x>=12.0"]
+# CUDA-only zero-padded FFT validation oracle (Stage 4/5C); never required on the Apple/production
+# path. The [ctk] extra pulls the CUDA toolkit wheels (nvrtc + headers) CuPy needs to JIT its
+# elementwise kernels — without them only precompiled cuFFT works, not the Green's-function build.
+cuda = ["cupy-cuda12x[ctk]>=12.0"]
 dev = [
     "pytest>=7.4",
     "ruff>=0.4",

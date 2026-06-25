@@ -41,7 +41,7 @@
 - **State:** The original three near-duplicate CUDA C files (now archived under `legacy/`, see §3.1)
   compile against CUDA 9.2 + cuFFT + DISLIN on a specific 2020 lab machine. Several correctness and
   performance bugs (see §3.6) mean the headline configuration (M = 100,000,000 particles) will not
-  realistically run as written. **Modernization status:** Stages 0–**4** are **done** — see §7. The
+  realistically run as written. **Modernization status:** Stages 0–**5** are **done** — see §7. The
   repo root hosts the `galaxy_collision` Python package with a scaffold, a tested (kpc, Myr, M☉)
   unit system, the SoA particle/grid data model, a reproducible two-galaxy IC generator
   (disk+bulge+central BH, 4v/2v), and — as of Stage 3 — a **correct CPU simulation**: CIC
@@ -54,13 +54,13 @@
   figures** at 256³ / 10M particles on the M5 Pro CPU (`docs/paper_reproduction.md`) — the gross
   outcome and the 4v↔2v contrast match, though cold-disk numerical heating is significant at this
   resolution (the warm-disk fix is Stage 8) and there is no validated energy conservation at 10M.
-  **Stage 5 (CUDA scale-up) is in progress** on an RTX 3070 box: **5A** made the force chain
-  device-resident (RV6/RV10 closed; suite green on CPU **and** CUDA + a determinism check), and
-  **5B** profiled and tuned it — **6.5–12.5× throughput** (1M→33, 10M→25, 30M→16, 100M→7 steps/s;
-  `docs/performance.md`) via adaptive warm-start V-cycling + a thread-local moment-reduction fix
-  (solve cut ~13×); deposit tuning (D19) was closed by measurement (it's ≤16% of the step; sorting
-  doesn't help). 100M fits the 8 GB card (~6.5 GB). Next: 5C (cuFFT oracle + 100M headline run).
-  Plan: `docs/stage5_plan.md`.
+  **Stage 5 (CUDA scale-up) is done** on an RTX 3070 box (`docs/performance.md`): the force chain
+  is device-resident (5A; RV6/RV10), the multigrid solve was tuned for **6.5–12.5× throughput**
+  (5B; adaptive warm-start V-cycling + a thread-local moment-reduction fix cut the solve ~13×;
+  deposit tuning D19 closed by measurement), the FFT oracle gained a CuPy/cuFFT GPU path (5C, D21),
+  and the **100M-particle headline collision** ran on the 8 GB card (5C, D20: 800 steps/400 Myr,
+  3.86 steps/s, 6491 MiB peak). Suite green on CPU **and** CUDA. Next: Stage 6 (Apple/Metal) —
+  where the f64 device reductions need an fp32/Kahan path (RV15). Plan: `docs/stage5_plan.md`.
 - **Goal (scoped):** Rebuild as **one portable source** (Taichi-style kernels compiling to
   CPU + CUDA + Metal), research-grade physics, **10–100M particles**, **Apple GPU as a
   first-class performance target**, with a **pluggable Poisson solver** (open-boundary multigrid
@@ -574,8 +574,13 @@ The full, shareable version of this plan — with per-stage objectives, tasks, d
 criteria — is in **`Galaxy_Collision_Modernization_Plan.docx`** (a generated artifact, gitignored;
 this section is the tracked source of truth).
 
-> **Current status (2026-06-22):** Stages 0–**4** ✅ done. The FFT oracle was pulled forward into
-> Stage 3 (so multigrid is validated against it now). **Stage 4 complete** (scope = D18) —
+> **Current status (2026-06-25):** Stages 0–**5** ✅ done. **Stage 5 (CUDA scale-up) complete** —
+> the force chain is device-resident, the multigrid solve was tuned for **6.5–12.5× throughput**
+> (adaptive warm-start V-cycling + a thread-local moment-reduction fix; `docs/performance.md`), the
+> FFT oracle gained a CuPy/cuFFT GPU path, and the **100M-particle headline collision** ran on the
+> 8 GB RTX 3070 (3.86 steps/s, 6491 MiB peak). Suite green on CPU and CUDA. Next: Stage 6 (Metal).
+> The FFT oracle was pulled forward into Stage 3 (so multigrid is validated against it now).
+> **Stage 4 complete** (scope = D18) —
 > **4A ✅, 4B ✅, 4C ✅** — the 4v & 2v collisions were run at 256³ / 10M particles and the paper's
 > headline figures reproduced (`docs/paper_reproduction.md`). The three checkpoints were:
 > - **4A — Validation hardening ✅:** principled multigrid≈oracle tolerance + analytic point-mass
@@ -606,7 +611,7 @@ this section is the tracked source of truth).
 | **2 — Initial conditions** | Mass-derived N, disk+bulge sampling, central BH, 4v/2v setups | CPU | ICs match target mass/profile; reproducible from seed | ✅ **Done** (2026-06-16) |
 | **3 — CPU reference (anchor)** | A *correct* sim: CIC + open-BC multigrid + KDK + softening + diagnostics + I/O | CPU | Plummer stays stable; two-body Kepler matches; energy drift < threshold | ✅ **Done** (2026-06-20) |
 | **4 — Validation & FFT oracle** | Zero-padded isolated FFT (✅ Stage 3) + validation hardening (4A) + paper-repro machinery (4B) + production 4v/2v runs & figures (4C) | CPU | Multigrid ≈ FFT within tolerance (✅); paper figures reproduced (✅ *qualitatively* — `docs/paper_reproduction.md`) | ✅ **Done** (2026-06-22) |
-| **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | 🟦 **In progress.** Prereq ✅ (RTX 3070 8 GB, Taichi CUDA verified — `docs/gpu_setup.md`). Plan = `docs/stage5_plan.md` (5A→5B→5C; D19–D21). **5A ✅** (device-resident force chain; RV6, RV10 done; suite green CPU **and** CUDA). **5B ✅** (profiler + benchmark matrix `docs/performance.md`: **6.5–12.5× throughput**, 1M→33, 100M→7 steps/s; adaptive warm-start V-cycling + a TLS moment-reduction fix cut the solve ~13×; RV5 done; D19 closed by measurement — deposit ≤16%, sorting doesn't help). 5C (cuFFT oracle + 100M headline run + write-up) ⬜ |
+| **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | ✅ **Done** (2026-06-25). RTX 3070 8 GB (`docs/gpu_setup.md`); checkpoints 5A→5C (`docs/stage5_plan.md`, D19–D21). **5A** device-resident force chain (RV6, RV10). **5B** profiler + benchmark (`docs/performance.md`): **6.5–12.5× throughput** via adaptive warm-start V-cycling + a TLS moment-reduction fix (solve ~13×; RV5); D19 closed by measurement. **5C** CuPy/cuFFT GPU oracle (D21, validates multigrid at 256³) + the **100M headline run** (D20: 800 steps/400 Myr, 3.86 steps/s, peak 6491 MiB/8192 — fits). Suite green on CPU **and** CUDA. |
 | **6 — Apple / Metal** | First-class Apple GPU, fp32 compute policy | Metal | Cross-backend parity (test 6); perf benchmark vs CUDA | ⬜ |
 | **7 — Visualization & output** | Realtime GGUI, batch→movie, paper figures, tracer particle | all | All four output modes working | ⬜ |
 | **8 — Research campaigns** | 4v/2v studies, central-BH experiments, longer runs | all | Reproduce + extend 2020 results (future hooks: DM halo, TreePM) | ⬜ |

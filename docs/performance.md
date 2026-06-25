@@ -80,6 +80,42 @@ raises intra-cell atomic contention) and the sort itself costs 250× the deposit
 pursued** — they would optimize a non-bottleneck. If a future workload makes deposit dominant,
 revisit; the harness is here to re-measure.
 
+## 100M headline run (5C, D20)
+
+The Stage-5 exit-gate run: a **100M-particle `two_galaxy_4v` collision at 256³**, 800 steps
+(400 Myr), on the RTX 3070.
+
+| metric | value |
+|---|---|
+| wall (run loop) | 207 s → **3.86 steps/s** |
+| peak VRAM | **6491 MiB / 8192** (fits, ~1.7 GB headroom) |
+| virial (final) | 0.91 |
+| grid-energy drift (max) | 0.40 — cold-disk heating, *monitor-only* (not a gate; §6/RV11) |
+| half-mass radius | 45.7 → **11.5 kpc** at first pericenter (~175 Myr) → 62.8 kpc (tidal re-expansion) |
+
+The collision signature is physically sensible (infall → pericenter compression → tidal
+spreading). The 3.86 steps/s here is below the **6.95** of the quiescent benchmark above: the
+benchmark measures warm, quasi-static steps (~2 V-cycles), whereas a live collision drives ρ
+hard near pericenter, so the *adaptive* solver correctly spends more cycles when the warm guess
+is poorer — exactly the behavior it's designed for. No snapshots were written (a 100M snapshot is
+~2.4 GB); the diagnostics history + tracer were recorded in memory. The full 400-Myr collision
+completes in ~3.5 minutes of compute.
+
+## FFT oracle on GPU (5C, D21)
+
+The validation oracle (`solver/fft_oracle.py`) now runs its transform on **CuPy/cuFFT** when a
+CUDA device + CuPy are present (auto-detected; `use_gpu=False` forces NumPy). The 512³ `rfftn`
+that backs the 256³ open-BC solve is **~19× faster on the GPU** (≈0.11 s vs ≈2.05 s), so
+multigrid can be validated against the spectrally-exact oracle at the *full production 256³ grid*
+(`test_multigrid_matches_gpu_oracle_at_production_grid`) rather than only the 64³ grids CPU CI
+affords. The math is identical — selected by the array module — so the NumPy path remains the CI
+fallback (covered when CuPy is absent). `rho`/`phi` still bridge through the host (Taichi field ↔
+NumPy); only the transform is offloaded, which is fine for a validation-only solver.
+
+Install: `pip install -e ".[cuda]"` (pulls `cupy-cuda12x[ctk]` — the `[ctk]` extra is required, as
+CuPy JITs its elementwise kernels and needs the CUDA headers; without it only precompiled cuFFT
+works, not the Green's-function build).
+
 ## Method notes / caveats
 
 - Per-stage times are individually `ti.sync`-bracketed (serialized), so they sum slightly above

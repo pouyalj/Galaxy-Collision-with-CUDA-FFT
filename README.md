@@ -10,7 +10,7 @@ now being rebuilt as **one portable source** that runs on CPU, NVIDIA CUDA, and
 Apple-Silicon GPU via [Taichi](https://www.taichi-lang.org/), with research-grade
 physics at 10–100M particles.
 
-> **Status: Stages 0–4 done.** On top of the scaffold, config loader, CI, units, SoA data
+> **Status: Stages 0–5 done.** On top of the scaffold, config loader, CI, units, SoA data
 > model, and two-galaxy/Plummer initial conditions, there is a **correct CPU simulation**: CIC
 > deposit/gather, both Poisson solvers (open-boundary multigrid plus a zero-padded FFT oracle),
 > a KDK leapfrog with Plummer softening, fp64 conservation diagnostics, and HDF5/npz snapshots
@@ -21,12 +21,13 @@ physics at 10–100M particles.
 > collisions at 256³ / 10M particles plus the Sun-like tracer path, via the `paper-repro` CLI
 > ([`docs/paper_reproduction.md`](docs/paper_reproduction.md); the gross outcome and 4v↔2v contrast
 > match, with significant cold-disk numerical heating at this resolution — a warm disk is a later
-> refinement). **Stage 5 (CUDA scale-up) is in progress** on an RTX 3070: **5A** made the force
-> chain device-resident on the GPU (suite green on both CPU and CUDA), and **5B** profiled and
-> tuned it for a **6.5–12.5× throughput gain** (1M → 33, 100M → 7 steps/s; 100M fits the 8 GB card)
-> via adaptive warm-start multigrid cycling — see [`docs/performance.md`](docs/performance.md).
-> Next: a 100M-particle headline run. See [`AGENT.md`](AGENT.md) for the architecture and staged
-> plan, [`docs/stage5_plan.md`](docs/stage5_plan.md) for the Stage-5 plan, and
+> refinement). **Stage 5 (CUDA scale-up) is done** on an RTX 3070: the force chain runs
+> device-resident on the GPU, the multigrid solve was tuned for a **6.5–12.5× throughput gain**
+> (adaptive warm-start cycling + a thread-local reduction fix), the FFT oracle gained a CuPy/cuFFT
+> GPU path, and a **100M-particle collision** ran on the 8 GB card (400 Myr in ~3.5 min, 6.5 GB
+> peak) — see [`docs/performance.md`](docs/performance.md). Suite green on both CPU and CUDA.
+> Next: Stage 6 (Apple/Metal). See [`AGENT.md`](AGENT.md) for the architecture and staged plan,
+> [`docs/stage5_plan.md`](docs/stage5_plan.md) for the Stage-5 plan, and
 > [`docs/development.md`](docs/development.md) to get started.
 
 ## Quickstart
