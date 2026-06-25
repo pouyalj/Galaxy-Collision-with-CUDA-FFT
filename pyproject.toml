@@ -41,6 +41,7 @@ hello-sim = "galaxy_collision.sim:hello_sim_cli"
 galaxy-sim = "galaxy_collision.sim:run_sim_cli"
 galaxy-bench = "galaxy_collision.bench:bench_cli"
 galaxy-view = "galaxy_collision.viz.viewer:view_cli"
+galaxy-serve = "galaxy_collision.viz.serve:serve_cli"
 galaxy-movie = "galaxy_collision.viz.movie:galaxy_movie_cli"
 paper-repro = "galaxy_collision.viz.paper_repro:paper_repro_cli"
 

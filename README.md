@@ -29,7 +29,8 @@ GPU from the same kernels via [Taichi](https://www.taichi-lang.org/).
 - **Validated** — a stable Plummer sphere, a two-body Kepler orbit, multigrid-vs-oracle agreement,
   conservation diagnostics, and cross-backend determinism (CPU↔CUDA + CPU↔Metal), all in CI.
 - **See it move** — a realtime GPU viewer (`galaxy-view`: live 3D points + a 2D density mode, orbit
-  camera, pause/step/restart; runs on Metal) and a headless batch→movie encoder (`galaxy-movie`:
+  camera, pause/step/restart; runs on Metal), a **headless web stream** (`galaxy-serve`: watch a
+  remote/headless run live in a browser via a link), and a batch→movie encoder (`galaxy-movie`:
   device-projected density frames → MP4/GIF), alongside the static paper-figure reproduction.
 
 > **Status:** Stages 0–7 complete (correct CPU reference → paper reproduction → CUDA scale-up →
@@ -56,7 +57,7 @@ Optional extras:
 
 ```bash
 pip install -e ".[cuda]"         # CuPy/cuFFT GPU path for the FFT validation oracle
-pip install -e ".[viz]"          # imageio(-ffmpeg) for batch→movie encoding (galaxy-movie)
+pip install -e ".[viz]"          # imageio(-ffmpeg) for the movie (galaxy-movie) + web stream (galaxy-serve)
 ```
 
 The realtime viewer (`galaxy-view`) needs no extra — it uses Taichi's built-in GGUI renderer — but
@@ -79,13 +80,14 @@ silently fell back to CPU.
 
 ## Usage
 
-Installing the package (`pip install -e .`) puts six commands on your `PATH`. What each one does:
+Installing the package (`pip install -e .`) puts seven commands on your `PATH`. What each one does:
 
 | Command | What it does |
 |---|---|
 | `hello-sim` | Minimal no-op run that just confirms the toolchain and your chosen backend work. Start here. |
 | `galaxy-sim` | Runs the full PM N-body pipeline from a YAML config; writes HDF5/npz snapshots + diagnostics. |
 | `galaxy-view` | **Live 3D/2D viewer** — opens a window and animates the collision on the GPU as it runs (needs a display). |
+| `galaxy-serve` | **Live web view** — streams the collision over HTTP so a **headless** run is watchable in a browser via a link. Needs the `viz` extra. |
 | `galaxy-movie` | Runs a collision and encodes a density-projection **movie** (MP4/GIF). Headless. Needs the `viz` extra. |
 | `paper-repro` | Runs a two-galaxy collision and renders the paper's density-projection + Sun-like-tracer figures. |
 | `galaxy-bench` | Times the force chain (throughput + per-stage profile). No physics output — a speed test. |
@@ -139,6 +141,18 @@ and a few can be overridden on the command line with **flags**. Both are spelled
   (a quick check / CI path) instead of opening the interactive window.
 - *In the window:* RMB-drag orbits, WASD moves, **SPACE** pauses, **N** single-steps, **R** restarts,
   **M** toggles 2D/3D, **P** cycles the projection plane, **[ ]** change speed, **ESC/Q** quits.
+
+**`galaxy-serve`** streams a live run to a browser over HTTP — for watching a **headless** box (no
+display needed; needs the `viz` extra). Flags: **`--config`**, **`--backend`**, **`--host`** (default
+`127.0.0.1`; `0.0.0.0` exposes it on the network — no auth, so prefer an SSH tunnel), **`--port`**
+(8080), **`--bins`** (projection resolution), **`--steps-per-frame`**, **`--fps`** (frame cap). Then:
+
+```bash
+galaxy-serve --config configs/paper_4v.yaml --backend cuda     # on the headless box
+ssh -N -L 8080:localhost:8080 user@box                         # from your laptop → http://localhost:8080
+```
+
+The browser page has pause/speed/plane buttons. See [`docs/visualization.md`](docs/visualization.md).
 
 **`galaxy-movie`** runs a collision and encodes a density-projection movie (needs the `viz` extra).
 Key flags: **`--config`**, **`--backend`**, **`--frame-cadence INT`** (steps between frames),
@@ -227,7 +241,7 @@ src/galaxy_collision/
   io.py            # HDF5/npz snapshots
   bench.py         # per-stage profiler + benchmark (galaxy-bench)
   sim.py           # orchestration + CLI entry points
-  viz/             # paper_repro figures · project (device 2D density) · movie (galaxy-movie) · viewer (galaxy-view)
+  viz/             # paper_repro · project (device 2D density) · movie (galaxy-movie) · viewer (galaxy-view) · serve (galaxy-serve)
 configs/  ·  tests/  ·  docs/  ·  legacy/   # YAML configs · pytest suite · docs · the 2020 CUDA source
 ```
 

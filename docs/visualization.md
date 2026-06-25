@@ -6,6 +6,7 @@ here (snapshots, paper figures); Stage 7 added the **movie** and the **realtime 
 | Mode | Command | Headless? | Best run on |
 |---|---|---|---|
 | Realtime 3D/2D viewer | `galaxy-view` | No — needs a display | **Mac/desktop** (Metal) |
+| **Live web view (browser link)** | `galaxy-serve` | **Yes** — streams over HTTP | **headless box** (e.g. CUDA) |
 | Batch → movie (MP4/GIF) | `galaxy-movie` | Yes | CUDA (faster at scale) or Mac |
 | Data snapshots (HDF5/npz) | `galaxy-sim` | Yes | anywhere |
 | Paper-figure reproduction | `paper-repro` | Yes | anywhere |
@@ -49,6 +50,34 @@ galaxy-view --config configs/paper_4v.yaml --backend metal --max-points 200000 -
 **Flags:** `--config` `--backend` `--max-points` `--steps-per-frame` `--bins` (2D resolution)
 `--radius` (3D point size; 0 = auto). Headless quick-check: `--offscreen --frames N --out DIR` dumps
 PNGs with no window (the CI smoke path).
+
+---
+
+## 1b. Live web view — `galaxy-serve` (headless, via a link)
+
+The desktop `galaxy-view` needs a display. When the sim runs on a **headless** box (e.g. the CUDA
+workstation), `galaxy-serve` streams the **live 2D density projection** over HTTP instead, so you
+watch the collision in a **browser** — no display, no X server, no Vulkan context (it's pure compute
++ an on-device colormap, the same projection the movie uses). Needs the `viz` extra (for JPEG).
+
+```bash
+# on the headless box:
+galaxy-serve --config configs/paper_4v.yaml --backend cuda            # serves 127.0.0.1:8080
+# from your laptop, tunnel the port and open the link in any browser:
+ssh -N -L 8080:localhost:8080 user@cuda-box                           # then: http://localhost:8080
+```
+
+The page shows a self-updating image (MJPEG `multipart/x-mixed-replace`) plus buttons to
+**pause/resume**, change **speed** (steps/frame), and cycle the **projection plane** (xy/xz/yz). The
+sim runs at full speed on the box; the browser just receives frames.
+
+**Flags:** `--config` `--backend` `--host` (default `127.0.0.1`) `--port` (8080) `--bins` (projection
+resolution) `--steps-per-frame` `--fps` (frame cap).
+
+**Access & safety:** the **SSH tunnel above is the recommended way** to get a link — it's encrypted
+and needs no open ports. `--host 0.0.0.0` instead binds the stream to the network directly (anyone
+who can reach the box can watch — **no authentication**), so use it only on a trusted network. This
+is a *view* of the 2D projection, not the interactive 3D window (that's `galaxy-view`, on a display).
 
 ---
 
@@ -114,6 +143,9 @@ re-expansion).
 
 ## Which machine?
 
-- **Viewer** → the Mac (or any box with a display); it's the interactive, Metal-native deliverable.
+- **Interactive viewer** (`galaxy-view`) → the Mac (or any box with a display); the Metal-native
+  deliverable with full 3D + controls.
+- **Watching a headless run via a link** (`galaxy-serve`) → run it on the headless box (CUDA), open
+  the SSH-tunnelled URL in your browser. Live 2D view, no display needed on the box.
 - **Movie / figures / snapshots** → headless, run anywhere; the CUDA box is fastest for large-N
   movie frame rendering, the Mac is fine for everything at ≤10M.

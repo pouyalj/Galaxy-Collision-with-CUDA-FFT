@@ -138,7 +138,7 @@ GalaxyCollision/
     │   ├── diagnostics_device.py       # device-resident energy/momentum/half-mass reductions (Stage 5/5A)
     │   ├── io.py                       # HDF5/npz snapshot I/O (Stage 3)
     │   ├── solver/                     # base + multigrid (open-BC) + fft_oracle (Stage 3)
-    │   └── viz/                        # paper_repro (S4) · project+movie (S7A) · viewer/GGUI (S7B)
+    │   └── viz/                        # paper_repro (S4) · project+movie (S7A) · viewer/GGUI (S7B) · serve/web (S7+)
     ├── tests/                          # …/solver_*/integrator/io/sim/determinism + conftest (GALAXY_TEST_ARCH)
     ├── docs/{development,paper_reproduction,gpu_setup,performance}.md  ·  docs/stage{5,6}_plan.md
     └── legacy/                         # original 2020 CUDA source, preserved for reference
@@ -507,12 +507,16 @@ portable (the one thing a plain FFT is not under Taichi) and physically correct 
 
 > **All four modes realized (Stages 3/4/7).** Snapshots = Stage 3 (`io.py`); paper figures =
 > Stage 4 (`viz/paper_repro.py`); batch→movie = Stage 7A (`viz/project.py` + `viz/movie.py`,
-> `galaxy-movie`); realtime viewer = Stage 7B (`viz/viewer.py`, `galaxy-view`). Details below as
-> originally scoped:
+> `galaxy-movie`); realtime viewer = Stage 7B (`viz/viewer.py`, `galaxy-view`); plus a headless
+> **web stream** of the viewer (`viz/serve.py`, `galaxy-serve`, a Stage-7 follow-on). Details below:
 
 - **Real-time 3D viewer:** Taichi **GGUI** particle renderer (in-process, GPU-resident points) —
   orbit, pause/step/restart, live knobs. *(✅ 7B `viz/viewer.py`; also a full-N 2D density mode;
   runs on Metal.)*
+- **Headless web view:** the same live 2D density projection streamed as **MJPEG over HTTP**
+  (`viz/serve.py`, `galaxy-serve`) so a **display-less** run (e.g. the CUDA box) is watchable in a
+  browser via a link (SSH-tunnel the port). Pure compute + on-device colormap — no GGUI/Vulkan
+  context needed. *(✅ Stage-7 follow-on; browser pause/speed/plane controls.)*
 - **Batch → movie:** headless run projects density frames on the device → MP4/GIF via
   `imageio-ffmpeg`. **Replaces DISLIN entirely.** *(✅ 7A `viz/movie.py`; ~1 MB/frame, no snapshot
   bloat.)*
@@ -528,7 +532,8 @@ portable (the one thing a plain FFT is not under Taichi) and physically correct 
 > the `solver/` package (`base` + `multigrid` + `fft_oracle`), `tests/`, `docs/`, and `legacy/`.
 > Stage 4 / 4B added `viz/paper_repro.py` (static paper-reproduction figures + the `paper-repro`
 > CLI); Stage 7 added `viz/project.py` (device 2D density projection), `viz/movie.py` (`galaxy-movie`,
-> 7A) and `viz/viewer.py` (`galaxy-view` realtime GGUI viewer, 7B).
+> 7A), `viz/viewer.py` (`galaxy-view` realtime GGUI viewer, 7B), and `viz/serve.py` (`galaxy-serve`
+> headless MJPEG web stream — a Stage-7 follow-on).
 
 ```
 galaxy_collision/
