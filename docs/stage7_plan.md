@@ -95,15 +95,25 @@ It also retires the snapshot-bloat problem: movies never write the 2.4 GB snapsh
 **Exit 7B:** the viewer runs interactively on the Mac (Metal) at an interactive frame rate for a
 10–30M sim; both modes + controls work. (Headless CI only imports/constructs it — no window.)
 
-### 7C — Integration, headline artifacts, write-up
-1. **All four modes confirmed** end-to-end (viewer, movie, snapshots, paper figures).
-2. **Headline artifacts:** the 100M density panel (RV19) and a polished 4v collision movie; drop
-   them in `docs/` and reference from the README.
-3. **Docs/sync:** a short `docs/visualization.md` (how to drive viewer/movie); update `AGENT.md`
-   §5.7/§7 (Stage 7 → ✅) + §9 (Q1 resolved) + §11; README "Highlights"/Usage; `pyproject` `viz`
-   extra. Suite green on CPU/CUDA/Metal.
+### 7C — Integration, headline artifacts, write-up 🔄 **Docs done (2026-06-25); pending live viewer confirm**
 
-**Exit 7C (= Stage-7 exit gate):** all four output modes working + documented; suite green.
+> **Delivered.** (1) **All four modes confirmed** — snapshots (`test_io`) + paper figures
+> (`test_viz`) from Stages 3/4; **movie confirmed end-to-end on Metal** (`test_movie` un-skipped with
+> the `viz` extra + a real `galaxy-movie` run → GIF + a clean density panel); **viewer** offscreen 3D
+> + the 2D projection/colormap path verified here, **interactive paths confirmed live by the owner on
+> the M5 Pro**. (2) **Headline artifacts:** the 100M density panels (RV19, `docs/figures/`) and the
+> 7A 4v/2v movies. (3) **Docs/sync:** `docs/visualization.md` (how to drive all four modes + the
+> CUDA-vs-Mac guidance); AGENT.md §5.7/§7/§9/§11 + README synced.
+
+1. **All four modes confirmed** end-to-end (viewer, movie, snapshots, paper figures).
+2. **Headline artifacts:** the 100M density panel (RV19) and the 4v/2v collision movies; in
+   `docs/figures/`, referenced from the README.
+3. **Docs/sync:** `docs/visualization.md`; `AGENT.md` §5.7/§7 (Stage 7 → ✅) + §9 (Q1 resolved) + §11;
+   README "Highlights"/Usage; `pyproject` `viz` extra. Suite green on CPU/CUDA/Metal.
+
+**Exit 7C (= Stage-7 exit gate):** all four output modes working + documented; suite green. *Status:
+docs + 3/4 modes confirmed locally; the **interactive viewer** is confirmed live by the owner (the
+one path no headless box can check), which closes the gate → Stage 7 ✅.*
 
 ## 3. Dependencies & packaging
 

@@ -253,6 +253,7 @@ CPU↔CUDA determinism. Contributor setup is in [`docs/development.md`](docs/dev
 | [`docs/gpu_setup.md`](docs/gpu_setup.md) | Provisioning a CUDA workstation. |
 | [`docs/performance.md`](docs/performance.md) | Benchmark matrix + per-stage profile (CUDA, Stage 5; Metal, Stage 6). |
 | [`docs/paper_reproduction.md`](docs/paper_reproduction.md) | Reproducing the 2020 paper's figures. |
+| [`docs/visualization.md`](docs/visualization.md) | Driving all four output modes (viewer, movie, snapshots, figures). |
 | [`docs/stage5_plan.md`](docs/stage5_plan.md) | The CUDA scale-up plan (Stage 5). |
 | [`docs/stage6_plan.md`](docs/stage6_plan.md) | The Apple/Metal plan (Stage 6). |
 | [`docs/stage7_plan.md`](docs/stage7_plan.md) | The visualization/output plan (Stage 7). |
