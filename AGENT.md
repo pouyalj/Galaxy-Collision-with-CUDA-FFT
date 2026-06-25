@@ -137,7 +137,7 @@ GalaxyCollision/
     │   ├── diagnostics_device.py       # device-resident energy/momentum/half-mass reductions (Stage 5/5A)
     │   ├── io.py                       # HDF5/npz snapshot I/O (Stage 3)
     │   ├── solver/                     # base + multigrid (open-BC) + fft_oracle (Stage 3)
-    │   └── viz/                        # paper_repro static figures (Stage 4/4B); GGUI/movie = Stage 7
+    │   └── viz/                        # paper_repro (S4) · project+movie (S7A) · viewer/GGUI (S7B)
     ├── tests/                          # …/solver_*/integrator/io/sim/determinism + conftest (GALAXY_TEST_ARCH)
     ├── docs/{development,paper_reproduction,gpu_setup,performance}.md  ·  docs/stage{5,6}_plan.md
     └── legacy/                         # original 2020 CUDA source, preserved for reference
@@ -504,14 +504,21 @@ portable (the one thing a plain FFT is not under Taichi) and physically correct 
 
 ### 5.7 Visualization & output
 
+> **All four modes realized (Stages 3/4/7).** Snapshots = Stage 3 (`io.py`); paper figures =
+> Stage 4 (`viz/paper_repro.py`); batch→movie = Stage 7A (`viz/project.py` + `viz/movie.py`,
+> `galaxy-movie`); realtime viewer = Stage 7B (`viz/viewer.py`, `galaxy-view`). Details below as
+> originally scoped:
+
 - **Real-time 3D viewer:** Taichi **GGUI** particle renderer (in-process, GPU-resident points) —
-  rotate, scrub, tweak parameters live. (If a standalone app is later wanted, export to a viewer.)
-- **Batch → movie:** headless run dumps frames (offscreen render or projected-density PNGs) →
-  stitch with `ffmpeg` to MP4/GIF. **Replaces DISLIN entirely.**
+  orbit, pause/step/restart, live knobs. *(✅ 7B `viz/viewer.py`; also a full-N 2D density mode;
+  runs on Metal.)*
+- **Batch → movie:** headless run projects density frames on the device → MP4/GIF via
+  `imageio-ffmpeg`. **Replaces DISLIN entirely.** *(✅ 7A `viz/movie.py`; ~1 MB/frame, no snapshot
+  bloat.)*
 - **Data + analysis:** periodic snapshots to **HDF5** (or `.npz`) — positions, velocities, ρ, Φ,
-  and diagnostics — for offline plotting/analysis.
+  and diagnostics — for offline plotting/analysis. *(✅ Stage 3 `io.py`.)*
 - **Reproduce the paper:** a script that recreates the density-projection panels and the
-  tracked-particle trajectory using the FFT oracle and the original-style ICs.
+  tracked-particle trajectory. *(✅ Stage 4 `viz/paper_repro.py`, `paper-repro`.)*
 
 ### 5.8 Proposed repo layout
 
@@ -762,7 +769,7 @@ Items from **Stage 5 / 5C (2026-06-25)** — oracle + 100M run; doc-accuracy, no
 | ID | Area | Finding | Suggested action | Status |
 |---|---|---|---|---|
 | RV18 | Doc ↔ memory | The oracle docstring/§5.2 said the GPU pad is "~1 GB" — that's only the *persistent* Green's-FT; the per-solve working set is ~3 GB (pad + kernel-FT + spectrum) and CuPy's pool reserves ~5–6 GB once the cuFFT plan workspace is counted (measured). | Restate as persistent ~1 GB / working set ~3 GB / pooled ~5–6 GB; oracle runs alone, never co-resident with a 100M run. | ✅ **Done** (2026-06-25, 5C) — fixed in `fft_oracle.py` docstring, §5.2, D21. |
-| RV19 | Viz (Stage 7) | The 5C 100M run produced **no image** — snapshots are ~2.4 GB each, so none were written; it is validated by diagnostics (per D20: 100M = perf/scale demo, science figures were 4C at 10M). | A 100M density-projection panel would make a stronger headline — a natural Stage-7 viz item (flagged in the §7 Stage-7 row). | ⬜ Deferred to Stage 7 |
+| RV19 | Viz (Stage 7) | The 5C 100M run produced **no image** — snapshots are ~2.4 GB each, so none were written; it is validated by diagnostics (per D20: 100M = perf/scale demo, science figures were 4C at 10M). | A 100M density-projection panel would make a stronger headline — a natural Stage-7 viz item (flagged in the §7 Stage-7 row). | ✅ **Done** (2026-06-25, Stage 7A) — the device-side projection (`viz/project.py`) renders a 100M density panel with a ~1 MB/frame transfer (no 2.4 GB snapshot); panels at pericenter + tidal are in `docs/figures/density_100M_t{175_pericenter,375_tidal}.png`. |
 
 Items from **Stage 6 / 6B (2026-06-25)** — Metal benchmark + deposit spike:
 

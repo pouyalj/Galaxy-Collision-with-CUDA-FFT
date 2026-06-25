@@ -28,9 +28,13 @@ GPU from the same kernels via [Taichi](https://www.taichi-lang.org/).
   RTX 3070 (see [Performance](#performance)).
 - **Validated** — a stable Plummer sphere, a two-body Kepler orbit, multigrid-vs-oracle agreement,
   conservation diagnostics, and cross-backend determinism (CPU↔CUDA + CPU↔Metal), all in CI.
+- **See it move** — a realtime GPU viewer (`galaxy-view`: live 3D points + a 2D density mode, orbit
+  camera, pause/step/restart; runs on Metal) and a headless batch→movie encoder (`galaxy-movie`:
+  device-projected density frames → MP4/GIF), alongside the static paper-figure reproduction.
 
 > **Status:** Stages 0–6 complete (correct CPU reference → paper reproduction → CUDA scale-up →
-> Apple/Metal as a first-class backend). The realtime viewer/movie output (Stage 7) is next. See
+> Apple/Metal as a first-class backend). **Stage 7 (visualization) is underway** — the batch→movie
+> encoder (7A) and the realtime GGUI viewer (7B) are done; the write-up (7C) wraps it. See
 > [`AGENT.md`](AGENT.md) for the full architecture and staged roadmap.
 
 ## Installation
@@ -258,9 +262,10 @@ CPU↔CUDA determinism. Contributor setup is in [`docs/development.md`](docs/dev
 Stages 0–6 are done: scaffold & CI → units & data model → initial conditions → correct CPU
 reference → validation & FFT oracle & paper reproduction → **CUDA scale-up to 100M** → **Apple/Metal
 as a first-class backend** (Kahan-fp32 reductions, 3-way parity, benchmark; the CIC deposit is the
-Metal throughput ceiling at scale — see [Performance](#performance)). Up next: **Stage 7** (realtime
-Taichi GGUI viewer + batch→movie output) and **Stage 8** (research campaigns). See
-[`AGENT.md` §7](AGENT.md) for per-stage detail and exit criteria.
+Metal throughput ceiling at scale — see [Performance](#performance)). **Stage 7 (visualization &
+output)** is in progress: **7A** batch→movie (`galaxy-movie`, device-projected density frames) and
+**7B** the realtime GGUI viewer (`galaxy-view`) are done — leaving **7C** (integration write-up).
+Then **Stage 8** (research campaigns). See [`AGENT.md` §7](AGENT.md) for per-stage detail.
 
 ## License & origin
 
