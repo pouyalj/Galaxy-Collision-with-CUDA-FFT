@@ -16,8 +16,9 @@ GPU from the same kernels via [Taichi](https://www.taichi-lang.org/).
 
 ## Highlights
 
-- **One source, three backends** — the same `@ti.kernel` code compiles to CPU, CUDA, and (in
-  progress) Apple Metal; pick at runtime with `--backend`.
+- **One source, three backends** — the same `@ti.kernel` code compiles to CPU, NVIDIA CUDA, and
+  Apple Metal; pick at runtime with `--backend`. (Metal has no hardware fp64, so the device
+  reductions use a Kahan-compensated fp32 path there — D6.)
 - **Research-grade physics** — Cloud-In-Cell deposit/gather, a symplectic kick-drift-kick
   leapfrog, force softening, central black holes carrying real grid mass, and **open
   (isolated) boundary conditions** that fix the periodic-wrap artifact of a plain FFT.
@@ -26,10 +27,10 @@ GPU from the same kernels via [Taichi](https://www.taichi-lang.org/).
 - **Fast at scale** — a 100M-particle, 400-Myr collision runs in **~3.5 minutes** on an 8 GB
   RTX 3070 (see [Performance](#performance)).
 - **Validated** — a stable Plummer sphere, a two-body Kepler orbit, multigrid-vs-oracle agreement,
-  conservation diagnostics, and CPU↔CUDA determinism, all in CI.
+  conservation diagnostics, and cross-backend determinism (CPU↔CUDA + CPU↔Metal), all in CI.
 
-> **Status:** Stages 0–5 complete (correct CPU reference → paper reproduction → CUDA scale-up).
-> Apple/Metal (Stage 6) and the realtime viewer/movie output (Stage 7) are next. See
+> **Status:** Stages 0–6 complete (correct CPU reference → paper reproduction → CUDA scale-up →
+> Apple/Metal as a first-class backend). The realtime viewer/movie output (Stage 7) is next. See
 > [`AGENT.md`](AGENT.md) for the full architecture and staged roadmap.
 
 ## Installation
@@ -133,7 +134,7 @@ configs/  ·  tests/  ·  docs/  ·  legacy/   # YAML configs · pytest suite ·
 ```bash
 ruff check .                    # lint (what CI runs)
 pytest                          # full test suite
-GALAXY_TEST_ARCH=cuda pytest    # re-run the suite on the GPU backend
+GALAXY_TEST_ARCH=cuda pytest    # re-run the suite on a GPU backend (or =metal on Apple Silicon)
 ```
 
 CI (GitHub Actions) runs ruff + pytest + a CPU smoke run on every push. The test suite covers the
@@ -154,10 +155,12 @@ CPU↔CUDA determinism. Contributor setup is in [`docs/development.md`](docs/dev
 
 ## Roadmap
 
-Stages 0–5 are done: scaffold & CI → units & data model → initial conditions → correct CPU
-reference → validation & FFT oracle & paper reproduction → **CUDA scale-up to 100M**. Up next:
-**Stage 6** (Apple/Metal as a first-class GPU target) and **Stage 7** (realtime Taichi GGUI viewer
-+ batch→movie output). See [`AGENT.md` §7](AGENT.md) for per-stage detail and exit criteria.
+Stages 0–6 are done: scaffold & CI → units & data model → initial conditions → correct CPU
+reference → validation & FFT oracle & paper reproduction → **CUDA scale-up to 100M** → **Apple/Metal
+as a first-class backend** (Kahan-fp32 reductions, 3-way parity, benchmark; the CIC deposit is the
+Metal throughput ceiling at scale — see [Performance](#performance)). Up next: **Stage 7** (realtime
+Taichi GGUI viewer + batch→movie output) and **Stage 8** (research campaigns). See
+[`AGENT.md` §7](AGENT.md) for per-stage detail and exit criteria.
 
 ## License & origin
 

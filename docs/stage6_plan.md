@@ -1,9 +1,10 @@
-# Stage 6 — Apple / Metal (DRAFT plan)
+# Stage 6 — Apple / Metal
 
-> **Status:** draft for owner review (2026-06-25), not yet folded into `AGENT.md` §7.
+> **Status: ✅ COMPLETE (2026-06-25).** 6A ✅ (Kahan-fp32 reductions + 3-way parity), 6B ✅ (Metal
+> benchmark matrix + deposit spike), 6C ✅ (bounded 100M end-to-end run + doc sync). Exit gate met:
+> cross-backend parity (test 6) + perf benchmark vs CUDA. Suite green on CPU, CUDA, and Metal (123).
 > Scoped on the primary dev box: **Apple M5 Pro, 64 GB unified memory** (D7/D17 target tier),
-> Python 3.12, Taichi `arch=metal` confirmed live. Stage 5 (CUDA) is ✅; the Stage 3–4 suite is
-> green on CPU **and** CUDA (123 tests).
+> Python 3.12, Taichi `arch=metal`. Decisions D22–D24; deferred RV20 (Metal deposit write-scatter).
 
 ## 0. Goal & exit gate (from AGENT.md §7)
 
@@ -131,14 +132,23 @@ RV15 closed; the 3-way parity test added and passing.
 **Exit 6B:** Metal benchmark matrix produced; deposit characterized (winner chosen or Vulkan
 escalation documented); profile captured.
 
-### 6C — CUDA-vs-Metal write-up + headline run + doc sync ⬜
+### 6C — CUDA-vs-Metal write-up + headline run + doc sync ✅ **Done (2026-06-25)**
 
-1. **Headline run (D24).** A `two_galaxy_4v` 100M / 256³ collision on the M5 Pro; capture
-   steps/s + peak unified memory.
-2. **CUDA-vs-Metal comparison.** Add a Metal section to `docs/performance.md` with the side-by-side
-   matrix (3070 vs M5 Pro) and the per-stage profile; honest read on where each wins.
-3. **Doc sync.** `AGENT.md` §7 (Stage 6 → ✅, mark RV15 done), §1 status, README status/roadmap,
-   §11 review log; per the maintenance contract.
+> **Delivered.** The Stage-6 exit gate was already met after 6B (parity + perf-vs-CUDA), so 6C was
+> scoped down (owner, 2026-06-25): **skip the full 800-step 100M collision** (~30 min, mostly
+> re-demonstrating 5C's CUDA science) in favor of a **bounded 100M end-to-end run** proving the full
+> pipeline completes at scale on Metal. (1) Bounded run: `two_galaxy_4v` **100M / 256³, 60 steps
+> (30 Myr) on the M5 Pro** — 0.50 steps/s, **21.8 GB RSS / 64 GB (stable)**, status ok, virial 0.935,
+> half-mass 45.7→39.0 kpc (early infall, sensible; cf. 5C CUDA 11.5 kpc at pericenter ~175 Myr);
+> the full deposit→solve→grad→gather→KDK + Kahan-fp32 device diagnostics ran cleanly. (2)
+> CUDA-vs-Metal comparison + the R2 write-up landed in 6B (`docs/performance.md`). (3) Doc sync:
+> AGENT.md §1/§7 (Stage 6 ✅), README roadmap, §11 (RV15 done, RV20 logged).
+
+1. **Headline run (D24) — scoped to a bounded demo.** A `two_galaxy_4v` 100M / 256³ run on the
+   M5 Pro (60 steps), proving end-to-end completion + stable memory at scale (not the full 800-step
+   collision — exit gate already met; the full science was 5C on CUDA).
+2. **CUDA-vs-Metal comparison.** Metal section in `docs/performance.md` (matrix + per-stage + R2). *(6B)*
+3. **Doc sync.** `AGENT.md` §1/§7 (Stage 6 → ✅), README status/roadmap, §11 review log.
 
 **Exit 6C (= Stage-6 exit gate):** 3-way parity green; Metal benchmark vs CUDA documented; Stage 3–4
 suite green on Metal; docs synced.
