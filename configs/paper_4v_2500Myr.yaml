@@ -1,0 +1,28 @@
+# Long-evolution 4v run — 2500 Myr (2.5 Gyr), for a full-merger movie / live view.
+#
+# Duration = steps * dt = 5000 * 0.5 = 2500 Myr. This is ~6x the paper's 400 Myr window
+# (paper_4v.yaml), so it runs well past first pericenter through the full merger and into the
+# relaxed remnant — not just the first passage.
+#
+# Drive it with, e.g.:
+#     galaxy-movie  --config configs/paper_4v_2500Myr.yaml --backend cuda --out merger_2500.mp4
+#     galaxy-serve  --config configs/paper_4v_2500Myr.yaml --backend cuda --host 0.0.0.0
+# Particle count is a default below; override per run with --n (e.g. --n 100000000).
+#
+# Notes: this is a *qualitative* long run — over 5000 fp32 steps the energy drift accumulates and
+# cold-disk numerical heating dominates the late morphology (documented project-wide caveat; warm
+# disks are Stage 8). output_cadence is 0 so a long galaxy-sim run doesn't dump dozens of multi-GB
+# snapshots; galaxy-movie/galaxy-serve ignore it and stream frames instead.
+name: paper-4v-2500Myr
+backend: cpu            # override with --backend cuda (or metal) at the CLI
+ic_preset: two_galaxy_4v
+solver: multigrid       # portable open-BC default (D5)
+grid_size: 256          # 256 kpc box, 1 kpc^3 cells
+separation: 90.0        # initial center-to-center distance (kpc) — galaxies at 128 +/- 45
+impact_parameter: 0.0   # head-on; raise for a grazing encounter
+n_particles: 10000000   # default; override per run with --n (movie/serve both accept it)
+dt: 0.5                 # Myr (leave at 0.5 — the integrator/adaptive solver are tuned here)
+steps: 5000             # 5000 * 0.5 = 2500 Myr
+output_cadence: 0       # no snapshots (long run); movie/serve stream frames instead
+output_dir: outputs/paper_4v_2500Myr
+seed: 0
