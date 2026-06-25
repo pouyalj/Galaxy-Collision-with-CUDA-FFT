@@ -52,7 +52,11 @@ Optional extras:
 
 ```bash
 pip install -e ".[cuda]"         # CuPy/cuFFT GPU path for the FFT validation oracle
+pip install -e ".[viz]"          # imageio(-ffmpeg) for batch→movie encoding (galaxy-movie)
 ```
+
+The realtime viewer (`galaxy-view`) needs no extra — it uses Taichi's built-in GGUI renderer — but
+does need a display (it's a desktop/Mac tool, not a headless-CI one).
 
 ## Quickstart
 
@@ -62,6 +66,8 @@ galaxy-sim --config configs/plummer.yaml    # a real PM N-body run (Plummer sphe
 galaxy-sim --config configs/paper_4v.yaml --backend cuda   # the 4v collision on the GPU
 paper-repro --config configs/paper_4v.yaml  # collision → paper figures (heavy; see the config)
 galaxy-bench --n 10000000 --backend cuda    # benchmark the force chain at 10M particles
+galaxy-view --config configs/paper_4v.yaml --backend metal  # watch it collide live (needs a display)
+galaxy-movie --config configs/paper_4v.yaml --out collision.mp4   # render a collision movie
 ```
 
 Every run prints the **device it actually ran on** and warns loudly if a requested GPU backend
@@ -69,12 +75,14 @@ silently fell back to CPU.
 
 ## Usage
 
-Installing the package (`pip install -e .`) puts four commands on your `PATH`. What each one does:
+Installing the package (`pip install -e .`) puts six commands on your `PATH`. What each one does:
 
 | Command | What it does |
 |---|---|
 | `hello-sim` | Minimal no-op run that just confirms the toolchain and your chosen backend work. Start here. |
 | `galaxy-sim` | Runs the full PM N-body pipeline from a YAML config; writes HDF5/npz snapshots + diagnostics. |
+| `galaxy-view` | **Live 3D/2D viewer** — opens a window and animates the collision on the GPU as it runs (needs a display). |
+| `galaxy-movie` | Runs a collision and encodes a density-projection **movie** (MP4/GIF). Headless. Needs the `viz` extra. |
 | `paper-repro` | Runs a two-galaxy collision and renders the paper's density-projection + Sun-like-tracer figures. |
 | `galaxy-bench` | Times the force chain (throughput + per-stage profile). No physics output — a speed test. |
 
@@ -114,6 +122,25 @@ and a few can be overridden on the command line with **flags**. Both are spelled
 - **`--dt FLOAT`** — timestep in Myr (millions of years). *Default:* `0.5`.
 - **`--warmup INT`** — untimed steps run first (to exclude one-time GPU compilation). *Default:* `10`.
 - **`--measure INT`** — timed steps the throughput number is averaged over. *Default:* `10`.
+
+**`galaxy-view`** opens the live viewer (`--config` + `--backend` as above, plus):
+
+- **`--max-points INT`** — cap on how many particles are *drawn* in 3D (they're subsampled); the
+  physics still runs at full N. *Default:* `300000`.
+- **`--steps-per-frame INT`** — how many simulation steps to advance between drawn frames (higher =
+  faster-evolving but choppier). *Default:* `1`. Also adjustable live with `[` / `]`.
+- **`--bins INT`** — resolution of the 2D density-projection mode. *Default:* `512`.
+- **`--radius FLOAT`** — 3D point size; `0` auto-sizes from the drawn count. *Default:* `0`.
+- **`--offscreen` / `--frames INT` / `--out DIR`** — render PNG frames headlessly with no window
+  (a quick check / CI path) instead of opening the interactive window.
+- *In the window:* RMB-drag orbits, WASD moves, **SPACE** pauses, **N** single-steps, **R** restarts,
+  **M** toggles 2D/3D, **P** cycles the projection plane, **[ ]** change speed, **ESC/Q** quits.
+
+**`galaxy-movie`** runs a collision and encodes a density-projection movie (needs the `viz` extra).
+Key flags: **`--config`**, **`--backend`**, **`--frame-cadence INT`** (steps between frames),
+**`--bins INT`** (frame resolution), **`--axes {xy,xz,yz}`** (projection plane), **`--fps INT`**,
+**`--out PATH`** (`.mp4`/`.gif`), **`--panel PATH`** (also save the final frame as a PNG). Run
+`galaxy-movie --help` for the full list.
 
 ### Config file settings (YAML)
 
@@ -196,7 +223,7 @@ src/galaxy_collision/
   io.py            # HDF5/npz snapshots
   bench.py         # per-stage profiler + benchmark (galaxy-bench)
   sim.py           # orchestration + CLI entry points
-  viz/             # paper-reproduction figures (realtime viewer = Stage 7)
+  viz/             # paper_repro figures · project (device 2D density) · movie (galaxy-movie) · viewer (galaxy-view)
 configs/  ·  tests/  ·  docs/  ·  legacy/   # YAML configs · pytest suite · docs · the 2020 CUDA source
 ```
 
@@ -224,6 +251,7 @@ CPU↔CUDA determinism. Contributor setup is in [`docs/development.md`](docs/dev
 | [`docs/paper_reproduction.md`](docs/paper_reproduction.md) | Reproducing the 2020 paper's figures. |
 | [`docs/stage5_plan.md`](docs/stage5_plan.md) | The CUDA scale-up plan (Stage 5). |
 | [`docs/stage6_plan.md`](docs/stage6_plan.md) | The Apple/Metal plan (Stage 6). |
+| [`docs/stage7_plan.md`](docs/stage7_plan.md) | The visualization/output plan (Stage 7). |
 
 ## Roadmap
 

@@ -42,3 +42,6 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# Taichi GGUI persists imgui window layout here
+imgui.ini

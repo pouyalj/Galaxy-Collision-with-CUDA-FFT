@@ -61,8 +61,26 @@ It also retires the snapshot-bloat problem: movies never write the 2.4 GB snapsh
 **Exit 7A:** `galaxy-movie` produces an MP4/GIF headless on CPU and CUDA; projection kernel tested;
 100M panel rendered.
 
-### 7B — Realtime GGUI viewer (validated on the Mac — this box is headless)
-*The interactive half. Code is written/linted here; the live window is exercised on the M5 Pro.*
+### 7B — Realtime GGUI viewer ✅ **Done (2026-06-25)**
+*The interactive half. Code written/linted/offscreen-tested here; the live window is exercised on the M5 Pro.*
+
+> **Feasibility spike first (the gating unknown).** Taichi GGUI was confirmed working on this
+> **M5 Pro on `arch=metal`** (and on `vulkan`) — offscreen `show_window=False` renders a real
+> particle image — so the sim *and* the renderer both run on the Apple GPU (no sim-on-metal /
+> render-on-vulkan split), and the offscreen path is CI-smoke-testable.
+>
+> **Delivered.** (1) `viz/viewer.py` + `galaxy-view` CLI: an in-process `ti.ui.Window` driving the
+> live force chain (deposit→solve→grad→gather→KDK), runnable on cpu/cuda/**metal**. (2) **3D mode** —
+> `scene.particles` over a fixed ceil-capped subsample (`--max-points`), colored by galaxy id
+> (MW blue / Andromeda orange), orbit camera. (3) **2D mode** — the §1 device projection
+> (`viz.project`, the kernel the movie reuses) → LogNorm colormap → `canvas.set_image`; **M** toggles
+> 3D↔2D, **P** cycles the plane (xy/xz/yz). (4) **Controls** — SPACE pause · N single-step · R restart
+> to t=0 (reloads the stashed IC, no realloc) · `[`/`]` speed · `-`/`=` point size · ESC/Q quit · an
+> on-screen text overlay (step/time/mode/speed). (5) **Offscreen mode** (`--offscreen --frames`) for a
+> headless quick-check / CI. (6) `tests/test_viewer.py` — offscreen render smoke test (skips where
+> there's no graphics device, like the CUDA tests); ruff clean; CPU+Metal suite green.
+> *Interactive paths (keys, 2D `set_image`, text overlay) are validated on the Mac; the offscreen 3D
+> render + the 2D projection/colormap path are verified here.*
 
 1. **`viz/viewer.py` + `galaxy-view` CLI**: an in-process `ti.ui.Window` driving the live sim loop.
 2. **3D mode:** `scene.particles` over a **fixed subsample** (~0.5–2M indices chosen once),
