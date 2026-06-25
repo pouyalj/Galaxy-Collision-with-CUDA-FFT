@@ -66,8 +66,13 @@ Resolved (2026-06-20, Stage 3):
 - ✅ **Grid-memory accounting updated** for the real solver buffers: the estimate now counts ρ, Φ,
   the acceleration field, and the multigrid hierarchy (~0.57 GB at 256³), not just ρ/Φ.
 
-Still open (deferred to Stage 5, performance):
+Resolved (2026-06-25, Stage 5):
 
-- The open-boundary multigrid is *correct* but not yet *fast* (~0.5–0.7 convergence/cycle) — to be
-  tuned when chasing GPU performance. The boundary-condition moments are also computed on the host
-  for now; moving them onto the device is part of the same Stage-5 performance work.
+- ✅ **The multigrid is now fast.** Rather than tune the per-cycle rate, Stage 5 exploits that the
+  time loop warm-starts every solve — one V-cycle already hits the floor — so the solver
+  early-terminates adaptively (cold start keeps the full cap). Combined with a thread-local
+  reduction fix, the solve is ~13× faster and the whole step **6.5–12.5×** faster
+  ([`docs/performance.md`](docs/performance.md)).
+- ✅ **The boundary-condition moments now run on the device** (reduced on-GPU each solve; only 10
+  scalars cross to the host), along with the conservation diagnostics — no per-step full-grid
+  transfers.

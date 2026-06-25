@@ -99,7 +99,9 @@ benchmark measures warm, quasi-static steps (~2 V-cycles), whereas a live collis
 hard near pericenter, so the *adaptive* solver correctly spends more cycles when the warm guess
 is poorer — exactly the behavior it's designed for. No snapshots were written (a 100M snapshot is
 ~2.4 GB); the diagnostics history + tracer were recorded in memory. The full 400-Myr collision
-completes in ~3.5 minutes of compute.
+completes in ~3.5 minutes of compute. Per D20 this run is a **performance/scale demonstration**
+validated by diagnostics, not a new image (the science figures were 4C at 10M) — a 100M
+density-projection panel would make a stronger headline and is a natural **Stage-7** viz item.
 
 ## FFT oracle on GPU (5C, D21)
 

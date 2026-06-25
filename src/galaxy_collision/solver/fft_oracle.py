@@ -13,7 +13,10 @@ when available** (Stage 5/5C, D21) and falls back to NumPy's pocketfft otherwise
 is identical, selected by the array module ``self._xp``. cuFFT makes the 512³ transform
 ~19× faster (≈0.1 s vs ≈2 s), so multigrid can be validated against the oracle at the full
 production 256³ grid on the GPU, not just the small grids CI affords on CPU. It is *not* the
-production solver — at 256³ the padded 512³ complex buffer is ~1 GB (AGENT.md §5.2).
+production solver: at 256³ the persistent Green's-function transform is ~1 GB, but the
+**per-solve working set is ~3 GB** (zero-padded ρ + kernel-FT + spectrum, all 512³), and on GPU
+CuPy's pool reserves ~5–6 GB once the cuFFT plan workspace is included — so the oracle runs
+*alone* for validation, never co-resident with a 100M production run (AGENT.md §5.2).
 
 **Derivation of the kernel.** ∇²Φ = 4πGρ with the free-space Laplacian Green's function
 ∇²(−1/(4π r)) = δ gives Φ(r) = −G ∫ ρ(r')/|r−r'| d³r'. Discretized on node-centered

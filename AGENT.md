@@ -320,7 +320,7 @@ nvcc final_draft1.cu -Xcompiler -fopenmp \
 | D18 | Stage-4 reproduction scope | **Higher-fidelity, CPU-only repro:** 256³ grid, **10–30M particles**, both 4v & 2v over ~400–450 Myr; **headline figures only** (collision density-projection sequence + Sun-like tracer trajectory). Production solver = **multigrid** (portable default, D5); FFT oracle as a spot-check. Done in **three review checkpoints** (4A validation hardening → 4B repro machinery → 4C production runs + write-up). | Owner (2026-06-21). Measured CPU cost (M5 Pro): ~0.6 s/step (multigrid) / ~1.3 s/step (FFT) at 256³; a ~900-step 30M-particle run is ~18 min, so the full repro is CPU-affordable — **no CUDA (Stage 5) dependency**. Static matplotlib figures only; GGUI/movie viz stays Stage 7 |
 | D19 | Stage-5 deposition tuning | **Benchmark all three** CIC scatter strategies (plain `ti.atomic_add`, per-block privatization, sort-by-cell coalescing); keep the fastest. | Owner (2026-06-25). The deposit is the expected hot kernel at 10–100M (§5.6); measuring all three earns the "performance non-negotiable" requirement and feeds the per-stage profile exit gate. |
 | D20 | Stage-5 exit-gate N | **100M particles** on the in-hand 8 GB RTX 3070 (est. ~5.5 GB peak; ~2 GB margin, headless). | Owner (2026-06-25). Keeps the gate aligned with §7 as written; my re-derived footprint (44 B/particle incl. accel fields + ~0.57 GB grid + ~0.5 GB context) shows 100M fits this card. The sort-by-cell deposit variant's scratch (~0.8 GB) is the tight spot — fall back to resident atomics for the headline run if needed (§ `docs/stage5_plan.md`). |
-| D21 | Stage-5 FFT oracle | Add an optional **CuPy cuFFT** GPU path so the oracle validates multigrid at larger N on-device. | Owner (2026-06-25). Optional `cupy-cuda12x` dep; the 512³ pad (~1 GB) loads only at validation N, never co-resident with the 100M run. |
+| D21 | Stage-5 FFT oracle | Add an optional **CuPy cuFFT** GPU path so the oracle validates multigrid at larger N on-device. | Owner (2026-06-25). Optional `cupy-cuda12x[ctk]` dep; the 512³ working set (~3 GB live, ~5–6 GB CuPy-pooled with the cuFFT plan) loads only at validation N, run alone — never co-resident with the 100M run. |
 
 ---
 
@@ -381,8 +381,11 @@ bug #13.)
 | 30M | ~0.96 GB | ~0.57 GB | **~1.5 GB** |
 | 100M | ~3.2 GB | ~0.57 GB | **~3.8 GB** |
 
-The **zero-padded FFT oracle** adds a 512³ complex buffer (~1.07 GB) — used only on NVIDIA for
-validation, so it never constrains the Apple/production path.
+The **zero-padded FFT oracle**'s persistent Green's-function transform is a 512³ complex buffer
+(~1.07 GB), but its **per-solve working set is ~3 GB** (zero-padded ρ + kernel-FT + spectrum, all
+512³) and on GPU (CuPy/cuFFT, 5C) the pool reserves ~5–6 GB once the cuFFT plan workspace is
+counted — used only for NVIDIA validation, run *alone* (never co-resident with a 100M run), so it
+never constrains the Apple/production path.
 
 > **Live-run footprint is larger than the SoA 32 B (RV14, Stage 5).** Beyond the SoA fields,
 > `run_simulation` allocates **three per-particle acceleration fields** (`acc_x/y/z`, +12 B/particle
@@ -613,7 +616,7 @@ this section is the tracked source of truth).
 | **4 — Validation & FFT oracle** | Zero-padded isolated FFT (✅ Stage 3) + validation hardening (4A) + paper-repro machinery (4B) + production 4v/2v runs & figures (4C) | CPU | Multigrid ≈ FFT within tolerance (✅); paper figures reproduced (✅ *qualitatively* — `docs/paper_reproduction.md`) | ✅ **Done** (2026-06-22) |
 | **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | ✅ **Done** (2026-06-25). RTX 3070 8 GB (`docs/gpu_setup.md`); checkpoints 5A→5C (`docs/stage5_plan.md`, D19–D21). **5A** device-resident force chain (RV6, RV10). **5B** profiler + benchmark (`docs/performance.md`): **6.5–12.5× throughput** via adaptive warm-start V-cycling + a TLS moment-reduction fix (solve ~13×; RV5); D19 closed by measurement. **5C** CuPy/cuFFT GPU oracle (D21, validates multigrid at 256³) + the **100M headline run** (D20: 800 steps/400 Myr, 3.86 steps/s, peak 6491 MiB/8192 — fits). Suite green on CPU **and** CUDA. |
 | **6 — Apple / Metal** | First-class Apple GPU, fp32 compute policy | Metal | Cross-backend parity (test 6); perf benchmark vs CUDA | ⬜ |
-| **7 — Visualization & output** | Realtime GGUI, batch→movie, paper figures, tracer particle | all | All four output modes working | ⬜ |
+| **7 — Visualization & output** | Realtime GGUI, batch→movie, paper figures, tracer particle | all | All four output modes working | ⬜ (incl. a **100M density-projection panel** — the 5C 100M run was a perf/scale demo validated by diagnostics, no image yet) |
 | **8 — Research campaigns** | 4v/2v studies, central-BH experiments, longer runs | all | Reproduce + extend 2020 results (future hooks: DM halo, TreePM) | ⬜ |
 
 Stage 3 is the linchpin: get the physics provably correct on CPU first, *then* chase speed and
@@ -734,6 +737,13 @@ Items from **Stage 5 / 5B (2026-06-25)** — profiling + tuning:
 | RV17 | Coverage | The per-stage profiler shows **gather** is the largest particle stage and dominates at 100M (40%), not deposit. No optimization yet. | Optional later: tune the gather (3 accel grids × 8 nodes/particle) — e.g. a fused/structured accel field — when particle-bound throughput matters. Not pursued in 5B (solve was the win). | ⬜ Deferred |
 
 D19 (deposit tuning) is **resolved by measurement** (`docs/performance.md`): deposit is ≤16% of the step (≪2% at ≤10M), and a cell-sort A/B *slowed* deposit (0.75×) while the sort itself cost 250× the deposit — so baseline `ti.atomic_add` is kept; privatization/radix-sort are not pursued.
+
+Items from **Stage 5 / 5C (2026-06-25)** — oracle + 100M run; doc-accuracy, non-blocking:
+
+| ID | Area | Finding | Suggested action | Status |
+|---|---|---|---|---|
+| RV18 | Doc ↔ memory | The oracle docstring/§5.2 said the GPU pad is "~1 GB" — that's only the *persistent* Green's-FT; the per-solve working set is ~3 GB (pad + kernel-FT + spectrum) and CuPy's pool reserves ~5–6 GB once the cuFFT plan workspace is counted (measured). | Restate as persistent ~1 GB / working set ~3 GB / pooled ~5–6 GB; oracle runs alone, never co-resident with a 100M run. | ✅ **Done** (2026-06-25, 5C) — fixed in `fft_oracle.py` docstring, §5.2, D21. |
+| RV19 | Viz (Stage 7) | The 5C 100M run produced **no image** — snapshots are ~2.4 GB each, so none were written; it is validated by diagnostics (per D20: 100M = perf/scale demo, science figures were 4C at 10M). | A 100M density-projection panel would make a stronger headline — a natural Stage-7 viz item (flagged in the §7 Stage-7 row). | ⬜ Deferred to Stage 7 |
 
 ---
 
