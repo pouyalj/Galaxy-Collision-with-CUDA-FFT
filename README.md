@@ -28,8 +28,9 @@ GPU from the same kernels via [Taichi](https://www.taichi-lang.org/).
   RTX 3070 (see [Performance](#performance)).
 - **Validated** — a stable Plummer sphere, a two-body Kepler orbit, multigrid-vs-oracle agreement,
   conservation diagnostics, and cross-backend determinism (CPU↔CUDA + CPU↔Metal), all in CI.
-- **See it move** — a realtime GPU viewer (`galaxy-view`: live 3D points + a 2D density mode, orbit
-  camera, pause/step/restart; runs on Metal), a **headless web stream** (`galaxy-serve`: watch a
+- **See it move** — a realtime GPU viewer (`galaxy-view`: live 3D points colored by galaxy *or*
+  local density, plus a 2D density mode, orbit camera, pause/step/restart; runs on Metal), a
+  **headless web stream** (`galaxy-serve`: watch a
   remote/headless run live in a browser via a link), and a batch→movie encoder (`galaxy-movie`:
   2D-density **or** 3D-particle frames → MP4/GIF), alongside the static paper-figure reproduction.
 
@@ -150,10 +151,13 @@ and a few can be overridden on the command line with **flags**. Both are spelled
   faster-evolving but choppier). *Default:* `1`. Also adjustable live with `[` / `]`.
 - **`--bins INT`** — resolution of the 2D density-projection mode. *Default:* `512`.
 - **`--radius FLOAT`** — 3D point size; `0` auto-sizes from the drawn count. *Default:* `0`.
+- **`--color {galaxy,density}`** — 3D point color: by galaxy id (default) or by local density (a 3D
+  density cloud, same inferno scale as the 2D view). Toggle live with **C**.
 - **`--offscreen` / `--frames INT` / `--out DIR`** — render PNG frames headlessly with no window
   (a quick check / CI path) instead of opening the interactive window.
 - *In the window:* RMB-drag orbits, WASD moves, **SPACE** pauses, **N** single-steps, **R** restarts,
-  **M** toggles 2D/3D, **P** cycles the projection plane, **[ ]** change speed, **ESC/Q** quits.
+  **M** toggles 2D/3D, **C** toggles 3D color (galaxy ↔ density cloud), **P** cycles the projection
+  plane, **[ ]** change speed, **ESC/Q** quits.
 
 **`galaxy-serve`** streams a live run to a browser over HTTP — for watching a **headless** box (no
 display needed; needs the `viz` extra). Flags: **`--config`**, **`--backend`**, **`--n`** (particle
@@ -172,14 +176,15 @@ The browser page has pause/speed/plane buttons. See [`docs/visualization.md`](do
 either view, with **`--view`**:
 - **`--view density`** (default) — the 2D surface-density projection.
 - **`--view particles`** — a **3D point cloud**, the same look as `galaxy-view`'s 3D mode (rendered
-  headless via offscreen GGUI; MW blue / Andromeda orange).
+  headless via offscreen GGUI), colored by galaxy (MW blue / Andromeda orange) or by local density
+  (a 3D density cloud) via **`--color {galaxy,density}`**.
 
 Key flags: **`--config`**, **`--view {density,particles}`**, **`--backend`**, **`--n INT`** (particle
 count, overriding the config — e.g. `--n 100000000`), **`--frame-cadence INT`** (steps between
 frames), **`--fps INT`**, **`--out PATH`** (`.mp4`/`.gif`), **`--panel PATH`** (also save the final
 frame as a PNG). 2D-only: **`--bins INT`** (resolution), **`--axes {xy,xz,yz}`** (plane). 3D-only:
-**`--max-points INT`** (drawn-point cap), **`--radius FLOAT`** (point size). Run
-`galaxy-movie --help` for the full list.
+**`--max-points INT`** (drawn-point cap), **`--radius FLOAT`** (point size),
+**`--color {galaxy,density}`** (point coloring). Run `galaxy-movie --help` for the full list.
 
 ```bash
 galaxy-movie --config configs/paper_4v.yaml --backend cuda --view particles --out collision_3d.mp4

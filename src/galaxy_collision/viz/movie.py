@@ -136,6 +136,7 @@ def _movie_particles_3d(config, args) -> int:
         run_viewer(
             config, offscreen=True, frames=n_frames, steps_per_frame=cadence,
             out_dir=td, max_points=args.max_points, point_radius=args.radius,
+            color_by=args.color,
         )
         pngs = sorted(Path(td).glob("frame_*.png"))
         out = encode_image_files(pngs, args.out, fps=args.fps)
@@ -172,6 +173,8 @@ def galaxy_movie_cli(argv: list[str] | None = None) -> int:
                    help="3D: cap on drawn (subsampled) points (particles view).")
     p.add_argument("--radius", type=float, default=0.0,
                    help="3D: point radius (0 = auto; particles view).")
+    p.add_argument("--color", choices=("galaxy", "density"), default="galaxy",
+                   help="3D point color: galaxy id (default) or local density (3D density cloud).")
     p.add_argument("--fps", type=int, default=12)
     p.add_argument("--out", type=Path, default=Path("collision.mp4"))
     p.add_argument("--panel", type=Path, default=None, help="also save the final frame as a PNG.")

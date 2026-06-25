@@ -93,6 +93,37 @@ def _colormap_log(
         out[i, j] = ti.Vector([lut[idx, 0], lut[idx, 1], lut[idx, 2]])
 
 
+@ti.kernel
+def _max_grid3(field: ti.template(), out: ti.template()):
+    """Device max-reduction of a 3D field into 0-D ``out`` (Metal-safe; 0-D → TLS)."""
+    out[None] = 0.0
+    for i, j, k in field:
+        ti.atomic_max(out[None], field[i, j, k])
+
+
+@ti.kernel
+def _density_color(
+    pos_x: ti.template(), pos_y: ti.template(), pos_z: ti.template(),
+    rho: ti.template(), stride: ti.i32, m: ti.i32, inv_dx: ti.f32, gsize: ti.i32,
+    lut: ti.template(), log_vmin: ti.f32, inv_logspan: ti.f32, out_col: ti.template(),
+):
+    """Color each drawn (subsampled) point by the **local 3D density** ``rho`` at its position,
+    through the same inferno LogNorm LUT as the 2D view — turning the 3D point cloud into a
+    *density cloud*. Nearest-grid-node gather (cheap; the grid is 1 kpc, fine for coloring)."""
+    for i in range(m):
+        p = i * stride
+        ix = ti.min(gsize - 1, ti.max(0, ti.cast(pos_x[p] * inv_dx + 0.5, ti.i32)))
+        iy = ti.min(gsize - 1, ti.max(0, ti.cast(pos_y[p] * inv_dx + 0.5, ti.i32)))
+        iz = ti.min(gsize - 1, ti.max(0, ti.cast(pos_z[p] * inv_dx + 0.5, ti.i32)))
+        v = rho[ix, iy, iz]
+        t = 0.0
+        if v > 0.0:
+            t = (ti.log(v) - log_vmin) * inv_logspan
+        t = ti.min(1.0, ti.max(0.0, t))
+        idx = ti.min(_LUT_N - 1, ti.max(0, ti.cast(t * (_LUT_N - 1) + 0.5, ti.i32)))
+        out_col[i] = ti.Vector([lut[idx, 0], lut[idx, 1], lut[idx, 2]])
+
+
 def _inferno_lut() -> np.ndarray:
     """The 256×3 'inferno' colormap as an f32 LUT (one-time host build, uploaded to the device)."""
     import matplotlib
@@ -135,6 +166,7 @@ def run_viewer(
     frames: int = 0,
     out_dir: str | Path = "frames",
     resolution=(1024, 768),
+    color_by: str = "galaxy",
 ):
     """Run the PM sim and render its particles with GGUI (3D points + 2D density projection).
 
@@ -215,7 +247,8 @@ def run_viewer(
 
     # Mutable view state driven by the keyboard.
     st = {"mode": "3d", "paused": False, "spf": max(1, steps_per_frame), "plane": 0,
-          "radius": radius, "step": 0, "single": False}
+          "radius": radius, "step": 0, "single": False,
+          "color": color_by if color_by in ("galaxy", "density") else "galaxy"}
 
     def restart():
         reload_ic()
@@ -224,6 +257,14 @@ def run_viewer(
 
     def draw_3d():
         _pack_positions(parts.pos_x, parts.pos_y, parts.pos_z, stride, inv_box, m, rpos)
+        if st["color"] == "density":
+            # Recolor the cloud by local density each frame (a 3D "density cloud"): grid max →
+            # LogNorm window → per-point nearest-node gather through the inferno LUT.
+            _max_grid3(grid.rho, maxbuf)
+            vmax = float(maxbuf[None]) or 1.0
+            log_vmin = math.log(vmax) - _LOG_DECADES * math.log(10.0)
+            _density_color(parts.pos_x, parts.pos_y, parts.pos_z, grid.rho, stride, m,
+                           1.0 / dx, gs, lut, log_vmin, inv_logspan, rcol)
         scene.set_camera(camera)
         scene.ambient_light((0.45, 0.45, 0.5))
         scene.point_light(pos=(2.0, 2.0, 2.0), color=(1.0, 1.0, 1.0))
@@ -279,6 +320,10 @@ def run_viewer(
                 st["mode"] = "2d" if st["mode"] == "3d" else "3d"
             elif k == "p":
                 st["plane"] = (st["plane"] + 1) % len(_PROJ_PLANES)
+            elif k == "c":
+                st["color"] = "density" if st["color"] == "galaxy" else "galaxy"
+                if st["color"] == "galaxy":
+                    rcol.from_numpy(col)  # restore the static galaxy-id colors
             elif k == "[":
                 st["spf"] = max(1, st["spf"] - 1)
             elif k == "]":
@@ -298,9 +343,9 @@ def run_viewer(
             gui.text(f"step {st['step']}   t = {st['step'] * config.dt:.1f} Myr")
             gui.text(f"mode {st['mode'].upper()}"
                      + (f"  plane {_PLANE_NAMES[_PROJ_PLANES[st['plane']]]}"
-                        if st["mode"] == "2d" else f"  drawn {m:,}/{n:,}"))
+                        if st["mode"] == "2d" else f"  color {st['color']}  drawn {m:,}/{n:,}"))
             gui.text(f"speed {st['spf']} steps/frame" + ("   [PAUSED]" if st["paused"] else ""))
-            gui.text("SPACE pause  N step  R restart  M 2D/3D  P plane  [ ] speed  ESC quit")
+            gui.text("SPACE pause  N step  R restart  M 2D/3D  C color  P plane  [ ] speed  ESC")
         window.show()
         drawn += 1
 
@@ -338,6 +383,9 @@ def view_cli(argv: list[str] | None = None) -> int:
                    help="KDK steps advanced between rendered frames.")
     p.add_argument("--bins", type=int, default=512, help="2D density-projection resolution.")
     p.add_argument("--radius", type=float, default=0.0, help="3D point radius (0 = auto).")
+    p.add_argument("--color", choices=("galaxy", "density"), default="galaxy",
+                   help="3D point color: galaxy id (default) or local density (density cloud; "
+                        "toggle live with C).")
     p.add_argument("--offscreen", action="store_true",
                    help="Headless: render PNG frames with no window (CI / quick check).")
     p.add_argument("--frames", type=int, default=0, help="Frames to render in --offscreen mode.")
@@ -352,7 +400,7 @@ def view_cli(argv: list[str] | None = None) -> int:
     r = run_viewer(
         config, max_points=args.max_points, steps_per_frame=args.steps_per_frame,
         point_radius=args.radius, bins=args.bins, offscreen=args.offscreen,
-        frames=args.frames, out_dir=args.out,
+        frames=args.frames, out_dir=args.out, color_by=args.color,
     )
     print(f"galaxy-view: {r['device']} | N={r['n_particles']:,} drawn={r['drawn_points']:,} "
           f"(stride {r['stride']}) | frames={r['frames_rendered']} offscreen={r['offscreen']}")

@@ -32,15 +32,18 @@ galaxy-view --config configs/paper_4v.yaml --backend metal --max-points 200000 -
 
 **Two modes** (toggle with **M**):
 
-- **3D** — particles as GPU points, colored by galaxy (Milky Way blue, Andromeda orange), orbit
-  camera. Only a fixed **subsample** of `--max-points` is drawn (drawing 10–100M points is neither
-  feasible nor legible); the physics still runs at the config's full N.
+- **3D** — particles as GPU points, orbit camera. Color them by **galaxy** (Milky Way blue,
+  Andromeda orange — default) or by **local density** (a 3D "density cloud", the same inferno
+  LogNorm as the 2D view) via `--color {galaxy,density}` or the live **C** toggle. Only a fixed
+  **subsample** of `--max-points` is drawn (drawing 10–100M points is neither feasible nor legible);
+  the physics still runs at the config's full N.
 - **2D** — the full-N device density projection, log-scaled through an on-GPU colormap. Cycle the
   projection plane (xy/xz/yz) with **P**.
 
 **Controls:** RMB-drag orbit · WASD move · **SPACE** pause · **N** single-step · **R** restart to t=0 ·
 **[ / ]** slower/faster (steps per frame) · **- / =** smaller/larger points (3D) · **M** 2D↔3D ·
-**P** projection plane · **ESC/Q** quit. An on-screen overlay shows step / time / mode / speed.
+**C** 3D color (galaxy↔density) · **P** projection plane · **ESC/Q** quit. An on-screen overlay shows
+step / time / mode / color / speed.
 
 **Interactive frame rate** tracks the sim's steps/s at the config's N (see
 [`performance.md`](performance.md)): ~1M particles is fluid, 10–30M is watchable, 100M is a slideshow
@@ -48,8 +51,8 @@ galaxy-view --config configs/paper_4v.yaml --backend metal --max-points 200000 -
 *render* cost is bounded by `--max-points`, so it's the *physics* per step that sets the pace.
 
 **Flags:** `--config` `--backend` `--max-points` `--steps-per-frame` `--bins` (2D resolution)
-`--radius` (3D point size; 0 = auto). Headless quick-check: `--offscreen --frames N --out DIR` dumps
-PNGs with no window (the CI smoke path).
+`--radius` (3D point size; 0 = auto) `--color {galaxy,density}` (3D coloring). Headless quick-check:
+`--offscreen --frames N --out DIR` dumps PNGs with no window (the CI smoke path).
 
 ---
 
@@ -99,17 +102,18 @@ galaxy-movie --config configs/paper_4v.yaml --backend cuda --view particles --ou
 global color scale across the whole movie, so brightness is comparable frame-to-frame, matching
 `paper_repro`'s surface-density convention).
 
-**`--view particles`**: a **3D point cloud**, the same renderer as `galaxy-view`'s 3D mode (MW blue /
-Andromeda orange), driven headless through the viewer's **offscreen GGUI** path — confirmed working
-on the headless CUDA box (Vulkan) as well as the Mac. Subsample with `--max-points`.
+**`--view particles`**: a **3D point cloud**, the same renderer as `galaxy-view`'s 3D mode, driven
+headless through the viewer's **offscreen GGUI** path — confirmed working on the headless CUDA box
+(Vulkan) as well as the Mac. Color by galaxy (MW blue / Andromeda orange) or by local density (a 3D
+density cloud) with `--color {galaxy,density}`. Subsample with `--max-points`.
 
 Both encode to **MP4 or GIF** (by the `--out` extension); `--panel PATH` also saves the final frame
 as a standalone PNG.
 
 **Flags:** `--config` `--view {density,particles}` `--backend` `--n` (particle count, overriding the
 config) `--frame-cadence` (steps between frames) `--fps` `--out` (`.mp4`/`.gif`) `--panel`. Density
-only: `--bins` (resolution) `--axes {xy,xz,yz}`. 3D only: `--max-points` `--radius`. Without the
-`viz` extra it degrades
+only: `--bins` (resolution) `--axes {xy,xz,yz}`. 3D only: `--max-points` `--radius`
+`--color {galaxy,density}`. Without the `viz` extra it degrades
 gracefully — writes the PNG frames + prints the `ffmpeg` command to stitch them.
 
 **Where to render:** the movie path is headless, so the CUDA workstation renders frames fastest at
