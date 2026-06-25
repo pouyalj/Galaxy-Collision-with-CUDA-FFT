@@ -95,6 +95,43 @@ def test_multigrid_256_residual_regression():
     assert _resid_ratio(solver, rho_np, units.G, dx) < 5e-2
 
 
+def test_adaptive_cycling_warm_start_cheap_and_accurate():
+    """5B/RV5: a warm-started solve from a near-converged Φ early-terminates in far fewer cycles
+    than the cap, yet yields the same potential as a full fixed-cycle solve.
+
+    This is the Stage-5 throughput win: the time loop warm-starts every solve from the previous
+    step's Φ, so once the residual is at the floor a single V-cycle holds it there — no reason to
+    grind the full cap. ``tol=0`` disables early-termination for the reference.
+    """
+    pytest.importorskip("taichi", reason="Taichi not installed")
+    import taichi as ti
+
+    from galaxy_collision.solver.multigrid import MultigridPoissonSolver
+
+    ti.init(arch=ti.cpu)
+    n, dx = 64, 1.0
+    rho = _gaussian_rho(ti, n, dx, sigma=4.0, total_mass=1.0e10)
+    phi_a = ti.field(ti.f32, shape=(n, n, n))
+    phi_f = ti.field(ti.f32, shape=(n, n, n))
+
+    adaptive = MultigridPoissonSolver(n, dx=dx, n_cycles=30, tol=1e-3)
+    fixed = MultigridPoissonSolver(n, dx=dx, n_cycles=30, tol=0.0)
+
+    # Cold solve both to a converged Φ, then warm-re-solve the *same* source.
+    adaptive.solve(rho, phi_a)
+    fixed.solve(rho, phi_f)
+    adaptive.solve(rho, phi_a, warm_start=True)
+    fixed.solve(rho, phi_f, warm_start=True)
+
+    # The warm re-solve costs a handful of cycles, not the full cap; fixed runs all 30.
+    assert adaptive.last_cycles <= 3
+    assert fixed.last_cycles == 30
+    # ...and converges to the same potential (relative L2 difference well under a percent).
+    a, f = phi_a.to_numpy(), phi_f.to_numpy()
+    rel = float(np.sqrt(((a - f) ** 2).sum()) / np.sqrt((f**2).sum()))
+    assert rel < 1e-2, f"adaptive vs fixed Φ differ by {rel:.2e}"
+
+
 def test_multigrid_point_mass_far_field_monopole():
     """Analytic anchor (RV9): multigrid's potential → −GM/r with the *derived* O((dx/r)²)
     discrete-Green's-function error, decreasing monotonically. This pins multigrid to ground
@@ -113,7 +150,10 @@ def test_multigrid_point_mass_far_field_monopole():
     rho.fill(0.0)
     rho[c, c, c] = mass / dx**3  # all mass on one node — the hardest case for the lattice
 
-    solver = MultigridPoissonSolver(n, dx=dx, grav_constant=grav, n_cycles=80)
+    # tol=0 disables adaptive early-termination (5B) so all 80 cycles run: this test is about
+    # *convergence quality* — it needs the residual driven well below the production tol so the
+    # far-field deviation below is purely discretization, not an unconverged solve.
+    solver = MultigridPoissonSolver(n, dx=dx, grav_constant=grav, n_cycles=80, tol=0.0)
     solver.solve(rho, phi)
     # Converged to its own equation (so the residual deviation below is purely discretization).
     assert _resid_ratio(solver, rho.to_numpy(), grav, dx) < 1e-4

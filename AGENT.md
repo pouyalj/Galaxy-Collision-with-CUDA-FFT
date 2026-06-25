@@ -54,11 +54,13 @@
   figures** at 256³ / 10M particles on the M5 Pro CPU (`docs/paper_reproduction.md`) — the gross
   outcome and the 4v↔2v contrast match, though cold-disk numerical heating is significant at this
   resolution (the warm-disk fix is Stage 8) and there is no validated energy conservation at 10M.
-  **Stage 5 (CUDA scale-up) is now in progress** on an RTX 3070 box: checkpoint **5A is done** —
-  the force chain is device-resident (multigrid moments + conservation diagnostics reduced on
-  the GPU, grid ownership consolidated; RV6/RV10 closed) and the full suite re-passes on CPU
-  **and** CUDA, with a CPU↔CUDA determinism check. Next: 5B (profiling + deposition/solver
-  tuning) → 5C (cuFFT oracle + 100M run). Plan: `docs/stage5_plan.md`.
+  **Stage 5 (CUDA scale-up) is in progress** on an RTX 3070 box: **5A** made the force chain
+  device-resident (RV6/RV10 closed; suite green on CPU **and** CUDA + a determinism check), and
+  **5B** profiled and tuned it — **6.5–12.5× throughput** (1M→33, 10M→25, 30M→16, 100M→7 steps/s;
+  `docs/performance.md`) via adaptive warm-start V-cycling + a thread-local moment-reduction fix
+  (solve cut ~13×); deposit tuning (D19) was closed by measurement (it's ≤16% of the step; sorting
+  doesn't help). 100M fits the 8 GB card (~6.5 GB). Next: 5C (cuFFT oracle + 100M headline run).
+  Plan: `docs/stage5_plan.md`.
 - **Goal (scoped):** Rebuild as **one portable source** (Taichi-style kernels compiling to
   CPU + CUDA + Metal), research-grade physics, **10–100M particles**, **Apple GPU as a
   first-class performance target**, with a **pluggable Poisson solver** (open-boundary multigrid
@@ -118,6 +120,7 @@ GalaxyCollision/
     │   ├── __init__.py
     │   ├── config.py                   # SimConfig schema + YAML load/dump (Stage 0)
     │   ├── sim.py                      # orchestration + hello-sim/galaxy-sim CLIs (Stage 0/3)
+    │   ├── bench.py                     # per-stage profiler + throughput benchmark (galaxy-bench CLI, Stage 5/5B)
     │   ├── units.py                    # (kpc, Myr, M_sun) system + derived G (Stage 1)
     │   ├── data.py                     # SoA particle/grid fields + memory estimator (Stage 1)
     │   ├── ic.py                       # two-galaxy + Plummer initial conditions (Stage 2/3)
@@ -603,7 +606,7 @@ this section is the tracked source of truth).
 | **2 — Initial conditions** | Mass-derived N, disk+bulge sampling, central BH, 4v/2v setups | CPU | ICs match target mass/profile; reproducible from seed | ✅ **Done** (2026-06-16) |
 | **3 — CPU reference (anchor)** | A *correct* sim: CIC + open-BC multigrid + KDK + softening + diagnostics + I/O | CPU | Plummer stays stable; two-body Kepler matches; energy drift < threshold | ✅ **Done** (2026-06-20) |
 | **4 — Validation & FFT oracle** | Zero-padded isolated FFT (✅ Stage 3) + validation hardening (4A) + paper-repro machinery (4B) + production 4v/2v runs & figures (4C) | CPU | Multigrid ≈ FFT within tolerance (✅); paper figures reproduced (✅ *qualitatively* — `docs/paper_reproduction.md`) | ✅ **Done** (2026-06-22) |
-| **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | 🟦 **In progress.** Prereq ✅ (CUDA box live: RTX 3070 8 GB, Taichi CUDA verified — see `docs/gpu_setup.md`). Plan = `docs/stage5_plan.md` (5A→5B→5C; decisions D19–D21). **5A ✅** (device-resident force chain + correctness re-pass: RV6, RV10 done; suite green on CPU **and** CUDA via `GALAXY_TEST_ARCH=cuda`; CPU↔CUDA determinism test). 5B (profiling + deposition/solver tuning) and 5C (cuFFT oracle + 100M run + write-up) ⬜ |
+| **5 — CUDA & scale-up** | Device-resident state, deposition tuning, 100M+ runs | CUDA | 100M-particle run; benchmark + per-stage profile | 🟦 **In progress.** Prereq ✅ (RTX 3070 8 GB, Taichi CUDA verified — `docs/gpu_setup.md`). Plan = `docs/stage5_plan.md` (5A→5B→5C; D19–D21). **5A ✅** (device-resident force chain; RV6, RV10 done; suite green CPU **and** CUDA). **5B ✅** (profiler + benchmark matrix `docs/performance.md`: **6.5–12.5× throughput**, 1M→33, 100M→7 steps/s; adaptive warm-start V-cycling + a TLS moment-reduction fix cut the solve ~13×; RV5 done; D19 closed by measurement — deposit ≤16%, sorting doesn't help). 5C (cuFFT oracle + 100M headline run + write-up) ⬜ |
 | **6 — Apple / Metal** | First-class Apple GPU, fp32 compute policy | Metal | Cross-backend parity (test 6); perf benchmark vs CUDA | ⬜ |
 | **7 — Visualization & output** | Realtime GGUI, batch→movie, paper figures, tracer particle | all | All four output modes working | ⬜ |
 | **8 — Research campaigns** | 4v/2v studies, central-BH experiments, longer runs | all | Reproduce + extend 2020 results (future hooks: DM halo, TreePM) | ⬜ |
@@ -686,7 +689,7 @@ multigrid ≈ FFT oracle):
 
 | ID | Area | Finding | Suggested action | Status |
 |---|---|---|---|---|
-| RV5 | Perf (Stage 5) | The open-BC multigrid converges at a healthy but non-optimal ~0.5–0.7/cycle (measured on small/64³ blobs). The power-of-two vertex-centered coarsening puts the coarse far-face a half-cell inside the fine one, which slows (does not break) convergence; correctness comes from the fine-grid operator + multipole BCs, so the converged Φ is right regardless. | Tune at Stage 5 (e.g. proper 2^L+1 nesting or W-cycles/Galerkin coarsening); fine for a CPU reference. | ⬜ Deferred to Stage 5 |
+| RV5 | Perf (Stage 5) | The open-BC multigrid converges at a healthy but non-optimal ~0.5–0.7/cycle (measured on small/64³ blobs). The power-of-two vertex-centered coarsening puts the coarse far-face a half-cell inside the fine one, which slows (does not break) convergence; correctness comes from the fine-grid operator + multipole BCs, so the converged Φ is right regardless. | Tune at Stage 5 (e.g. proper 2^L+1 nesting or W-cycles/Galerkin coarsening); fine for a CPU reference. | ✅ **Done** (2026-06-25, Stage 5/5B) — addressed *not* by changing the coarsening but by **adaptive warm-start V-cycling**: the time loop warm-starts each solve, where 1 cycle already hits the floor, so `MultigridPoissonSolver(tol=…)` early-terminates (cold step keeps the full cap → RV10 intact). Per-cycle savings dwarf any per-cycle-rate tuning. Solve ~13× faster; validated vs a fixed-cycle reference over a collision (`docs/performance.md`, `tests/test_solver_multigrid.py`). Coarsening tuning (W-cycles/Galerkin) is now moot for throughput. |
 | RV6 | Perf (Stage 5) | Device-residency gaps for the CPU reference: (a) the multigrid boundary multipole moments (M, CM, quadrupole) are computed host-side in NumPy each solve (a host↔device hop); (b) diagnostics pull full fields to host via `to_numpy()` each sample; (c) grid state is split across owners — `GridState` holds only ρ/Φ, the acceleration grids are allocated ad-hoc in `run_simulation`, and the MG hierarchy lives inside the solver. Clear and correct for the reference, but legacy bug #13 territory. | Move the moment reduction into a Taichi kernel; keep diagnostics device-side (Kahan fp32 on Metal); consolidate grid ownership when chasing device-resident performance. | ✅ **Done** (2026-06-25, Stage 5/5A) — (a) `multigrid._moments_device` reduces the 10 raw moments on-device (only 10 scalars cross to host; the per-step full-grid `rho.to_numpy()` is gone); (b) `diagnostics_device.DeviceDiagnostics` reduces KE/PE/momentum/ang-mom on-device + half-mass via radial histogram, so a history-only sample copies no full field (f64 accumulators, CUDA/CPU; Metal Kahan-fp32 still Stage 6); (c) `GridState` now owns ρ/Φ + the accel grids (ax/ay/az). Unit-tested vs the host NumPy reference (`tests/test_diagnostics.py`, `tests/test_solver_multigrid.py`). |
 
 Items from the **exit-gate hardening review (2026-06-20)** — the FFT energy gate was found
@@ -717,6 +720,15 @@ Items from **Stage 5 / 5A (2026-06-25)** — device-residency work; non-blocking
 |---|---|---|---|---|
 | RV14 | Doc ↔ code (memory) | §5.2's tables count the SoA at 32 B/particle but omit the **three per-particle accel fields** (`acc_x/y/z`, +12 B) that `run_simulation` allocates, so the realized footprint is ~44 B/particle and live peaks exceed the table (100M ≈ ~5.5 GB, not ~3.8 GB). | Note the live footprint in §5.2 and use it to size the 100M run. | ✅ **Done** (2026-06-25, 5A) — §5.2 footnote added; full live budget in `docs/stage5_plan.md` §4 (D20). |
 | RV15 | fp64 portability (Stage 6) | The Stage-5 device reductions (`multigrid._moments_device`, `diagnostics_device`) accumulate in **f64**, which Metal lacks. Correct on CUDA/CPU; a no-op risk until Metal. | At Stage 6 provide a Kahan-fp32 reduction path (already flagged in D6 and both modules' docstrings). | ⬜ Deferred to Stage 6 |
+
+Items from **Stage 5 / 5B (2026-06-25)** — profiling + tuning:
+
+| ID | Area | Finding | Suggested action | Status |
+|---|---|---|---|---|
+| RV16 | Perf regression (caught in 5B) | 5A's device moment reduction (RV6a) reduced into an *indexed* field element (`out[c] += …`), which defeats Taichi's thread-local-storage reduction — 256³ cells contending on a few global atomics cost **~175 ms/solve** (a regression vs the ~20 ms host-copy+NumPy it replaced), invisible to 5A's correctness-only tests. | Reduce into **0-D scalar** fields (`m[None] += …`) so TLS fires. | ✅ **Done** (2026-06-25, 5B) — ten 0-D accumulators in `_accumulate_moments` + 0-D `_sum_squares`; 72× on a single reduction (28→0.39 ms), moment pass ~175→~3.5 ms. Lesson: **profile device kernels, don't assume `to_numpy`-removal = faster.** |
+| RV17 | Coverage | The per-stage profiler shows **gather** is the largest particle stage and dominates at 100M (40%), not deposit. No optimization yet. | Optional later: tune the gather (3 accel grids × 8 nodes/particle) — e.g. a fused/structured accel field — when particle-bound throughput matters. Not pursued in 5B (solve was the win). | ⬜ Deferred |
+
+D19 (deposit tuning) is **resolved by measurement** (`docs/performance.md`): deposit is ≤16% of the step (≪2% at ≤10M), and a cell-sort A/B *slowed* deposit (0.75×) while the sort itself cost 250× the deposit — so baseline `ti.atomic_add` is kept; privatization/radix-sort are not pursued.
 
 ---
 

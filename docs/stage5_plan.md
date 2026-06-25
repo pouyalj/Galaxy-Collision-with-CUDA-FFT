@@ -74,8 +74,15 @@ Stage 5 also closes deferred review items **RV5, RV6, RV10** and partially advan
 > not asserted — see the test docstring). (6) `GALAXY_TEST_ARCH` conftest override →
 > **122 tests pass on CPU and on CUDA**; ruff clean. RV6/RV10 closed; RV14/RV15 logged in AGENT.md §11.
 
-### 5B — Performance: profiling + deposition + solver tuning
+### 5B — Performance: profiling + deposition + solver tuning ✅ **Done (2026-06-25)**
 *Earn the "performance non-negotiable" requirement.*
+
+> **Delivered (`docs/performance.md`).** Per-stage profiler + `galaxy-bench` CLI. **6.5–12.5×
+> throughput** (1M→33, 10M→25, 30M→16, 100M→7 steps/s; 100M fits at 6.5 GB). The solve was the
+> bottleneck (not deposit): cut ~13× by (1) a thread-local moment-reduction fix (undoing a 5A
+> regression, RV16) and (2) adaptive warm-start V-cycling (RV5; cold cap preserves RV10), validated
+> vs a fixed-cycle reference over a collision. D19 closed by measurement — deposit ≤16%, cell-sort
+> *slows* it. Suite green CPU+CUDA (123).
 
 1. **Per-stage profiler.** Wrap deposit / solve / grad / gather / integrate with Taichi's kernel
    profiler (`ti.init(kernel_profiler=True)` + `ti.profiler.print_kernel_profiler_info()`) plus

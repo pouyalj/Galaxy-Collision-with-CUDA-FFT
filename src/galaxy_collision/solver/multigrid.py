@@ -129,34 +129,62 @@ def _prolong_add(phi_c: ti.template(), phi_f: ti.template(), nf: ti.i32):
 
 
 @ti.kernel
-def _accumulate_moments(rho: ti.template(), n: ti.i32, dx: ti.f32, out: ti.template()):
-    """One-pass device reduction of the 10 raw mass moments into ``out`` (f64, length 10).
+def _accumulate_moments(
+    rho: ti.template(), n: ti.i32, dx: ti.f32,
+    m0: ti.template(), m1: ti.template(), m2: ti.template(), m3: ti.template(),
+    m4: ti.template(), m5: ti.template(), m6: ti.template(), m7: ti.template(),
+    m8: ti.template(), m9: ti.template(),
+):
+    """One-pass device reduction of the 10 raw mass moments into ten **0-D** f64 fields.
 
-    Layout: ``out = [M, Σmx, Σmy, Σmz, Σmx², Σmy², Σmz², Σmxy, Σmxz, Σmyz]`` where
-    ``m = rho·dx³`` is the cell mass and ``(x,y,z) = (i,j,k)·dx`` the node position. The
-    host turns these into the center of mass and the second moments about it (parallel-axis).
-    Reductions target ``out[c]`` at compile-time-constant indices so Taichi can thread-local
-    them; f64 keeps the 256³-cell sum accurate (Σ over ~1.7e7 cells), matching the NumPy
-    reference. f64 is CUDA/CPU only — see the module docstring (Metal = Stage 6).
+    Moments: ``[M, Σmx, Σmy, Σmz, Σmx², Σmy², Σmz², Σmxy, Σmxz, Σmyz]`` where ``m = rho·dx³``
+    is the cell mass and ``(x,y,z) = (i,j,k)·dx`` the node position. The host turns these into
+    the center of mass and the second moments about it (parallel-axis).
+
+    **Why ten separate 0-D fields, not one length-10 field (Stage 5/5B perf):** Taichi's
+    thread-local-storage reduction only fires for reductions into a *0-D scalar* field
+    (``m[None] += …``). Reducing into an *indexed* element (``out[c] += …``) falls back to
+    global atomics, and 256³ cells contending on a handful of addresses cost ~175 ms here
+    (vs ~4 ms with TLS) — measured. f64 keeps the ~1.7e7-cell sum accurate (CUDA/CPU only;
+    Metal = Stage 6, see the module docstring).
     """
-    for c in range(10):
-        out[c] = 0.0
+    m0[None] = 0.0
+    m1[None] = 0.0
+    m2[None] = 0.0
+    m3[None] = 0.0
+    m4[None] = 0.0
+    m5[None] = 0.0
+    m6[None] = 0.0
+    m7[None] = 0.0
+    m8[None] = 0.0
+    m9[None] = 0.0
     vol = ti.cast(dx, ti.f64) ** 3
     for i, j, k in ti.ndrange(n, n, n):
         m = ti.cast(rho[i, j, k], ti.f64) * vol
         x = ti.cast(i, ti.f64) * dx
         y = ti.cast(j, ti.f64) * dx
         z = ti.cast(k, ti.f64) * dx
-        out[0] += m
-        out[1] += m * x
-        out[2] += m * y
-        out[3] += m * z
-        out[4] += m * x * x
-        out[5] += m * y * y
-        out[6] += m * z * z
-        out[7] += m * x * y
-        out[8] += m * x * z
-        out[9] += m * y * z
+        m0[None] += m
+        m1[None] += m * x
+        m2[None] += m * y
+        m3[None] += m * z
+        m4[None] += m * x * x
+        m5[None] += m * y * y
+        m6[None] += m * z * z
+        m7[None] += m * x * y
+        m8[None] += m * x * z
+        m9[None] += m * y * z
+
+
+@ti.kernel
+def _sum_squares(field: ti.template(), out: ti.template()):
+    """Σ field² as a single f64 reduction into the **0-D** field ``out`` (device-side L2 norm).
+
+    ``out[None]`` (not an indexed element) so Taichi's thread-local reduction fires — see
+    ``_accumulate_moments`` for why this matters (~0.4 ms vs ~28 ms at 256³)."""
+    out[None] = 0.0
+    for idx in ti.grouped(field):
+        out[None] += ti.cast(field[idx], ti.f64) ** 2
 
 
 @ti.kernel
@@ -226,14 +254,25 @@ class MultigridPoissonSolver(PoissonSolver):
         pre_sweeps: int = 2,
         post_sweeps: int = 2,
         coarse_sweeps: int = 40,
+        tol: float = 1e-3,
+        min_cycles: int = 1,
     ):
         self.grid_size = grid_size
         self.dx = float(dx)
         self.G = units.G if grav_constant is None else grav_constant
-        self.n_cycles = n_cycles
+        self.n_cycles = n_cycles  # max V-cycles per solve (cap)
         self.nu1 = pre_sweeps
         self.nu2 = post_sweeps
         self.coarse_sweeps = coarse_sweeps
+        # Adaptive cycling (Stage 5/5B, RV5): stop V-cycles once the finest-grid residual norm
+        # falls below `tol` × ‖rhs‖, but never fewer than `min_cycles`. A *warm-started* step
+        # begins near the solution and reaches the discretization floor (~6e-5) in one cycle, so
+        # it stops at `min_cycles`; a cold step (residual ~2e-2 even at 20 cycles) can't beat
+        # `tol` and runs the full `n_cycles` cap — so cold-start behavior (and RV10) is unchanged.
+        # `last_cycles` records how many cycles the most recent solve actually ran.
+        self.tol = float(tol)
+        self.min_cycles = max(1, int(min_cycles))
+        self.last_cycles = 0
 
         # Build the level sizes (finest first), halving while a coarser grid still has
         # an interior (≥ 3 nodes/axis) and the parent is even.
@@ -248,9 +287,12 @@ class MultigridPoissonSolver(PoissonSolver):
         self.rhs = [ti.field(ti.f32, shape=(s, s, s)) for s in sizes]
         self.res = [ti.field(ti.f32, shape=(s, s, s)) for s in sizes]
 
-        # Device-resident accumulator for the 10 raw boundary moments (RV6a). f64 so the
-        # 256³ sum stays accurate; CUDA/CPU only (Metal = Stage 6).
-        self._moment_buf = ti.field(ti.f64, shape=10)
+        # Ten 0-D f64 accumulators for the raw boundary moments (RV6a). 0-D (not a length-10
+        # field) so each reduction gets Taichi's thread-local optimization — see
+        # _accumulate_moments. CUDA/CPU only (Metal = Stage 6).
+        self._mom = tuple(ti.field(ti.f64, shape=()) for _ in range(10))
+        # 0-D f64 scratch for the device L2-norm reductions used by adaptive cycling.
+        self._sq_buf = ti.field(ti.f64, shape=())
 
     # --- boundary moments -------------------------------------------------------
 
@@ -261,9 +303,9 @@ class MultigridPoissonSolver(PoissonSolver):
         :meth:`_moments`, but reduces on the device and copies only 10 scalars to the host —
         no per-step full-grid ``to_numpy``.
         """
-        _accumulate_moments(rho, self.grid_size, self.dx, self._moment_buf)
-        s = self._moment_buf.to_numpy()  # 10 f64 scalars
-        total = float(s[0])
+        _accumulate_moments(rho, self.grid_size, self.dx, *self._mom)
+        s = [float(m[None]) for m in self._mom]  # 10 f64 scalars to host
+        total = s[0]
         if total <= 0.0:
             return 0.0, (0.0, 0.0, 0.0), (0.0,) * 6
         cx, cy, cz = s[1] / total, s[2] / total, s[3] / total
@@ -327,6 +369,11 @@ class MultigridPoissonSolver(PoissonSolver):
         _prolong_add(self.phi[level + 1], self.phi[level], n)
         self._smooth(level, self.nu2)
 
+    def _l2_device(self, field) -> float:
+        """L2 norm of ``field`` via a device sum-of-squares reduction (one scalar to host)."""
+        _sum_squares(field, self._sq_buf)
+        return float(self._sq_buf[None]) ** 0.5
+
     # --- public API -------------------------------------------------------------
 
     def solve(self, rho, phi, warm_start: bool = False) -> None:
@@ -347,8 +394,19 @@ class MultigridPoissonSolver(PoissonSolver):
             total, cx, cy, cz, sxx, syy, szz, sxy, sxz, syz,
         )
 
-        for _ in range(self.n_cycles):
+        # Adaptive V-cycling: stop once ‖residual‖ < tol·‖rhs‖ (but ≥ min_cycles), capped at
+        # n_cycles. ‖rhs‖ is computed once; the per-cycle residual reduction is device-side.
+        n = self.grid_size
+        inv_h2 = 1.0 / self.dx**2
+        rhs_norm = self._l2_device(self.rhs[0])
+        self.last_cycles = self.n_cycles
+        for c in range(self.n_cycles):
             self._vcycle(0)
+            if c + 1 >= self.min_cycles and rhs_norm > 0.0:
+                _residual(self.phi[0], self.rhs[0], self.res[0], n, inv_h2)
+                if self._l2_device(self.res[0]) < self.tol * rhs_norm:
+                    self.last_cycles = c + 1
+                    break
 
         _copy(self.phi[0], phi)
 
