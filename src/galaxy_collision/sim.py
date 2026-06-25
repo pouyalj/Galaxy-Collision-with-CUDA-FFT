@@ -204,6 +204,7 @@ def run_simulation(
     frame_cadence: int | None = None,
     frame_bins: int = 512,
     frame_axes: tuple[int, int] = (0, 1),
+    progress: bool | None = None,
 ) -> dict[str, Any]:
     """Run the full PM N-body pipeline and return a summary (incl. a diagnostics history).
 
@@ -224,6 +225,10 @@ def run_simulation(
     sequence of *global* particle indices whose positions are recorded each history sample and
     returned as ``tracer_path`` (shape ``(n_samples, n_tracers, 3)``) — the Sun-like tracer path.
 
+    ``progress`` (Stage 7), default ``None``, shows a 0→100% terminal progress bar over the step
+    loop — auto-enabled only when stderr is a TTY (silent in pipes/logs/tests); ``True``/``False``
+    force it.
+
     ``frame_cadence`` (Stage 7), when set, captures a **device-projected** surface-density frame
     (``frame_bins``² over the box, in-plane ``frame_axes``) every that-many steps plus the first and
     last — returned as ``frames`` (shape ``(n_frames, frame_bins, frame_bins)``) + ``frame_times``.
@@ -240,11 +245,19 @@ def run_simulation(
     from galaxy_collision.diagnostics_device import DeviceDiagnostics
     from galaxy_collision.integrator import kdk_step
     from galaxy_collision.io import snapshot_from_states, write_snapshot
+    from galaxy_collision.progress import ProgressBar
     from galaxy_collision.solver import make_solver
 
     backend = init_backend(config)
 
+    # The pre-loop IC build + equilibration can take minutes at 100M; note it on a TTY so the
+    # progress bar's later silence isn't mistaken for a hang. (Same TTY rule as the bar.)
+    import sys as _sys
+    _show = _sys.stderr.isatty() if progress is None else progress
     if icr is None:
+        if _show:
+            print(f"preparing initial conditions ({config.resolve_n_particles():,} particles)…",
+                  file=_sys.stderr, flush=True)
         icr = _build_ic(config, plummer_model=plummer_model)
     elif icr.preset != config.ic_preset:
         # Fail fast: a mismatched override would silently skip/misapply disk equilibration
@@ -384,6 +397,7 @@ def run_simulation(
         write_snap(0, m0)
     if frame_cadence:
         capture_frame(0)
+    bar = ProgressBar(config.steps, label=config.name, enabled=progress)
     for step in range(1, config.steps + 1):
         kdk_step(parts, acc_x, acc_y, acc_z, accel_fn, config.dt)
         want_hist = step % hist_cad == 0 or step == config.steps
@@ -396,6 +410,8 @@ def run_simulation(
                 write_snap(step, m)
         if frame_cadence and (step % frame_cadence == 0 or step == config.steps):
             capture_frame(step)
+        bar.update(step)
+    bar.finish()
     ti.sync()
 
     e0 = history[0]["energy"]

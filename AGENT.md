@@ -136,6 +136,7 @@ GalaxyCollision/
     │   ├── integrator.py              # KDK leapfrog + direct Plummer-softened force (Stage 3)
     │   ├── diagnostics.py              # energy/momentum/Lagrangian-radius, fp64 host (Stage 3)
     │   ├── diagnostics_device.py       # device-resident energy/momentum/half-mass reductions (Stage 5/5A)
+    │   ├── progress.py                 # TTY 0→100% step progress bar for headless runs (Stage 7)
     │   ├── io.py                       # HDF5/npz snapshot I/O (Stage 3)
     │   ├── solver/                     # base + multigrid (open-BC) + fft_oracle (Stage 3)
     │   └── viz/                        # paper_repro (S4) · project+movie (S7A) · viewer/GGUI (S7B) · serve/web (S7+)

@@ -294,15 +294,21 @@ def run_viewer(
 
     drawn = 0
     if offscreen:
+        from galaxy_collision.progress import ProgressBar
+
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
-        for f in range(frames if frames > 0 else 1):
+        nframes = frames if frames > 0 else 1
+        bar = ProgressBar(nframes, label="rendering")
+        for f in range(nframes):
             for _ in range(st["spf"]):
                 step_once()
                 st["step"] += 1
             draw_3d()
             window.save_image(str(out / f"frame_{f:05d}.png"))
             drawn += 1
+            bar.update(f + 1)
+        bar.finish()
         return _summary(backend, n, m, stride, drawn, offscreen)
 
     while window.running:

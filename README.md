@@ -90,7 +90,8 @@ The browser page shows the live density projection with pause / speed / projecti
 (`galaxy-serve` and `galaxy-movie` need the `viz` extra; `galaxy-view` needs a local display.)
 
 Every run prints the **device it actually ran on** and warns loudly if a requested GPU backend
-silently fell back to CPU.
+silently fell back to CPU. Long headless runs (`galaxy-sim`, `galaxy-movie`, `paper-repro`) show a
+**0→100% progress bar** in the terminal — auto-shown when stderr is a TTY, silent in pipes/logs.
 
 ## Usage
 

@@ -108,7 +108,8 @@ headless through the viewer's **offscreen GGUI** path — confirmed working on t
 density cloud) with `--color {galaxy,density}`. Subsample with `--max-points`.
 
 Both encode to **MP4 or GIF** (by the `--out` extension); `--panel PATH` also saves the final frame
-as a standalone PNG.
+as a standalone PNG. A **0→100% progress bar** fills in the terminal as it runs (the step loop for
+`density`, the rendered frames for `particles`) — auto-shown on a TTY, silent in pipes/logs.
 
 **Flags:** `--config` `--view {density,particles}` `--backend` `--n` (particle count, overriding the
 config) `--frame-cadence` (steps between frames) `--fps` `--out` (`.mp4`/`.gif`) `--panel`. Density
