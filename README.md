@@ -169,9 +169,10 @@ ssh -N -L 8080:localhost:8080 user@box                         # from your lapto
 The browser page has pause/speed/plane buttons. See [`docs/visualization.md`](docs/visualization.md).
 
 **`galaxy-movie`** runs a collision and encodes a density-projection movie (needs the `viz` extra).
-Key flags: **`--config`**, **`--backend`**, **`--frame-cadence INT`** (steps between frames),
-**`--bins INT`** (frame resolution), **`--axes {xy,xz,yz}`** (projection plane), **`--fps INT`**,
-**`--out PATH`** (`.mp4`/`.gif`), **`--panel PATH`** (also save the final frame as a PNG). Run
+Key flags: **`--config`**, **`--backend`**, **`--n INT`** (particle count, overriding the config —
+e.g. `--n 100000000`), **`--frame-cadence INT`** (steps between frames), **`--bins INT`** (frame
+resolution), **`--axes {xy,xz,yz}`** (projection plane), **`--fps INT`**, **`--out PATH`**
+(`.mp4`/`.gif`), **`--panel PATH`** (also save the final frame as a PNG). Run
 `galaxy-movie --help` for the full list.
 
 ### Config file settings (YAML)

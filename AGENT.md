@@ -520,8 +520,9 @@ portable (the one thing a plain FFT is not under Taichi) and physically correct 
   stream a 100M run off a 10M paper config), plus `--backend`/`--bins`/`--steps-per-frame`/`--fps`.
   *(✅ Stage-7 follow-on; browser pause/speed/plane controls.)*
 - **Batch → movie:** headless run projects density frames on the device → MP4/GIF via
-  `imageio-ffmpeg`. **Replaces DISLIN entirely.** *(✅ 7A `viz/movie.py`; ~1 MB/frame, no snapshot
-  bloat.)*
+  `imageio-ffmpeg`. **Replaces DISLIN entirely.** Takes `--n` to override the config's particle
+  count (e.g. `--n 100000000`), plus `--frame-cadence`/`--bins`/`--axes`/`--fps`/`--out`/`--panel`.
+  *(✅ 7A `viz/movie.py`; ~1 MB/frame, no snapshot bloat.)*
 - **Data + analysis:** periodic snapshots to **HDF5** (or `.npz`) — positions, velocities, ρ, Φ,
   and diagnostics — for offline plotting/analysis. *(✅ Stage 3 `io.py`.)*
 - **Reproduce the paper:** a script that recreates the density-projection panels and the

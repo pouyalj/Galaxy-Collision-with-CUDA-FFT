@@ -107,7 +107,7 @@ _AXES = {"xy": (0, 1), "xz": (0, 2), "yz": (1, 2)}
 
 
 def galaxy_movie_cli(argv: list[str] | None = None) -> int:
-    """CLI: ``galaxy-movie --config C [--backend B] [--frame-cadence N] [--out movie.mp4] …``."""
+    """CLI: ``galaxy-movie --config C [--backend B] [--n N] [--frame-cadence K] [--out FILE] …``."""
     import argparse
 
     from galaxy_collision.config import load_config
@@ -117,6 +117,8 @@ def galaxy_movie_cli(argv: list[str] | None = None) -> int:
                                 description="Run a sim and render a density-projection movie.")
     p.add_argument("--config", type=Path, required=True, help="YAML run config.")
     p.add_argument("--backend", choices=("cpu", "cuda", "metal"), default=None)
+    p.add_argument("--n", type=int, default=None,
+                   help="particle count, overriding the config's n_particles (e.g. 100000000).")
     p.add_argument("--frame-cadence", type=int, default=None,
                    help="steps between frames (default: ~60 frames across the run).")
     p.add_argument("--bins", type=int, default=512, help="image resolution per side.")
@@ -129,7 +131,12 @@ def galaxy_movie_cli(argv: list[str] | None = None) -> int:
     config = load_config(args.config)
     if args.backend is not None:
         config.backend = args.backend
-        config.validate()
+    if args.n is not None:
+        # Override the config's particle count; clear particle_mass so the two don't both
+        # resolve a count (SimConfig forbids setting both).
+        config.n_particles = args.n
+        config.particle_mass = None
+    config.validate()
     cadence = args.frame_cadence or max(1, config.steps // 60)
 
     result = run_simulation(

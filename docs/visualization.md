@@ -90,6 +90,7 @@ Runs a collision headless and encodes a density-projection **movie**. Needs the 
 pip install -e ".[viz]"          # imageio + imageio-ffmpeg (bundles ffmpeg — no system install)
 galaxy-movie --config configs/paper_4v.yaml --backend cuda --frame-cadence 5 --out collision.mp4
 galaxy-movie --config configs/paper_4v.yaml --frame-cadence 5 --out collision.gif --panel final.png
+galaxy-movie --config configs/paper_4v.yaml --backend cuda --n 100000000 --out collision_100M.mp4
 ```
 
 Each frame is the device 2D projection → matplotlib `LogNorm` (one global color scale across the
@@ -97,8 +98,9 @@ whole movie, so brightness is comparable frame-to-frame, matching `paper_repro`'
 convention) → encoded to **MP4 or GIF** (by the `--out` extension). `--panel PATH` also saves the
 final frame as a standalone PNG.
 
-**Flags:** `--config` `--backend` `--frame-cadence` (steps between frames) `--bins` (frame resolution)
-`--axes {xy,xz,yz}` `--fps` `--out` (`.mp4`/`.gif`) `--panel`. Without the `viz` extra it degrades
+**Flags:** `--config` `--backend` `--n` (particle count, overriding the config) `--frame-cadence`
+(steps between frames) `--bins` (frame resolution) `--axes {xy,xz,yz}` `--fps` `--out` (`.mp4`/`.gif`)
+`--panel`. Without the `viz` extra it degrades
 gracefully — writes the PNG frames + prints the `ffmpeg` command to stitch them.
 
 **Where to render:** the movie path is headless, so the CUDA workstation renders frames fastest at
